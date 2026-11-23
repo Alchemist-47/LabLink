@@ -11,5 +11,6 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
+      - run: pip-audit -r requirements.txt
       - run: ruff check lablink tests
       - run: pytest --cov=lablink --cov-report=term-missing

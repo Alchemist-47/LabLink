@@ -79,6 +79,7 @@ backend design and the test suite.
 
 ## 7. Task board
 ### In progress
+- #18 **Security hardening** · **Claude** · files: `lablink/__init__.py`, `lablink/models.py`, `lablink/seed.py`, `lablink/routes.py`, `lablink/security.py`, `lablink/templates/base.html`, `README.md`, `.env.example`, `render.yaml`, `tests/*`. Write rate limit on all form POSTs + `DEMO_MODE` setting + README "Security model". Antigravity: do not touch these files.
 - #3 Deploy to **Render free tier** · **Ashish** (Render dashboard, needs his GitHub + Gemini key) · steps in README → "Deploy (live demo): Render free tier"
 
 ### To do
@@ -90,6 +91,8 @@ backend design and the test suite.
 | 8 | Draft LinkedIn post + platform project description | Antigravity | Explain the problem, FairShare, Gemini's role |
 
 ### Done
+- #17 CI dependency scan: added pip-audit==2.10.1 to requirements-dev.txt and workflow step scanning requirements.txt on every push/PR. Local scan clean: 0 known vulnerabilities (Antigravity, 2026-11-23)
+- #16 Demo bar says changes last until restart; Lab Coordinator "Reset demo" button (POST /demo/reset, admin-only, CSRF) restores seed data; `Repository.clear()` for memory + Firestore. 127 tests, axe clean (Claude, 2026-11-23)
 - #15 axe audit clean: 0 violations (WCAG 2.1 AA + best practice) on 9 page/role combos plus suggestions, booking clash and 404 on desktop + mobile. Badge colours one shade lighter (same hues), demo bar is an `<aside>` landmark, unique region label on equipment page (Claude, 2026-11-23)
 - #14 AI suggestions v2: tiers Needed (quoted evidence) / Worth considering (domain inference, unticked); `project_kind=software_only` → nothing; minimal thinking + 8 s timeout + retry without thinking; honest source labels (Gemini / keyword / "Gemini didn't respond"); default model `gemini-3.5-flash-lite`; `scripts/eval_ai.py` checks 8 real cases against live Gemini. 119 tests (Claude, 2026-11-23)
 - #14 Concurrent student booking guardrail: Students cannot book overlapping slots across different equipment. Returns schedule clash error with station name, timing, suppressed waitlist option, and conflict-free slot recommendations. 111 tests pass (Antigravity, 2026-11-23)
@@ -111,6 +114,8 @@ backend design and the test suite.
 - Post-session feedback → equipment health flag
 
 ## 8. Work log (newest first, one line per handoff)
+- 2026-11-23 · Antigravity · #17 done (.github/workflows/tests.yml, requirements-dev.txt). Added pip-audit==2.10.1 dependency scan in CI after install step; verified 0 known vulnerabilities locally against requirements.txt.
+- 2026-11-23 · Claude · #16 done. Persistence decision: stay in-memory on Render for judging (clean demo each restart); switch to Firestore only if we reach Top 10, before the pitch. Needs commit + push.
 - 2026-11-23 · Claude · Final audit: repo rules pass, 7/7 CI green, live site verified with Gemini on all pages, a11y 0 violations (#15, replaces task 5). Open: Cloud Run URL question to organisers, LinkedIn post + description (task 8). Needs commit + push.
 - 2026-11-23 · Claude · Hotfix: Gemini timeout 8 s → 15 s. Gemini rejects server deadlines under 10 s (400 INVALID_ARGUMENT), which made every call fall back. Guard test added. 120 tests.
 - 2026-11-23 · Claude · #14 done. Root causes found: live site never reached Gemini (model `gemini-flash-latest` 404, then 504 timeouts from default thinking), and #13's rules were over-strict. Appended 2 lines to `style.css` (`.tier-heading`). Needs commit + push; then Ashish runs `python scripts/eval_ai.py` with his key.
