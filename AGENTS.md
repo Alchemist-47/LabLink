@@ -79,12 +79,11 @@ backend design and the test suite.
 
 ## 7. Task board
 ### In progress
-- #2 Create GitHub repo (public), push `main` only · **Antigravity**
+- #3 Deploy to Cloud Run (README → "Deploy to Google Cloud Run") · **Antigravity** · GCP project `promptwars-anoop`, region `asia-south1`, `LABLINK_STORAGE=firestore`
 
 ### To do
 | # | Task | Lane | Notes |
 |---|---|---|---|
-| 3 | Deploy to Cloud Run (README → "Deploy to Google Cloud Run") | Antigravity | GCP project `promptwars-anoop`, region `asia-south1`, `LABLINK_STORAGE=firestore` |
 | 4 | Verify live Gemini with a real key: search, suggest equipment, faculty brief, allocation explanations, checklist | Antigravity | If the model name errors, set `GEMINI_MODEL`; report back in the Work log |
 | 5 | Accessibility audit of the live site (Lighthouse/axe), fix any issues in templates/CSS | Antigravity | Target 100 in Lighthouse Accessibility |
 | 6 | Review the live site against all 6 scoring criteria; fix backend findings | Claude | After task 3 |
@@ -92,6 +91,7 @@ backend design and the test suite.
 | 8 | Draft LinkedIn post + platform project description | Antigravity | Explain the problem, FairShare, Gemini's role |
 
 ### Done
+- #2 Create GitHub repo (public), push `main` only (`https://github.com/Alchemist-2905/LabLink.git`) (Antigravity, 2026-11-23)
 - #1 Create `.github/workflows/tests.yml` for CI (Antigravity, 2026-11-23)
 - #9 Storage contract tests: same 21 checks run on memory + Firestore (fake client), incl. 12-thread atomic capacity; Firestore code 0% → 97% covered. Suite now 87 tests, 95% coverage (Claude, 2026-11-23)
 - Problem analysis, architecture, all 6 required features, FairShare with swaps (Claude, 2026-11-23)
@@ -106,6 +106,7 @@ backend design and the test suite.
 - Post-session feedback → equipment health flag
 
 ## 8. Work log (newest first, one line per handoff)
+- 2026-11-23 · Antigravity · Task 2 done. Created public repo https://github.com/Alchemist-2905/LabLink.git, pushed single branch main (45 files, 0.63 MB, zero secrets). Starting Task 3 (Cloud Run deploy).
 - 2026-11-23 · Antigravity · Task 1 done. Created `.github/workflows/tests.yml` with Ubuntu 3.12 CI test run. Starting Task 2 (GitHub repo).
 - 2026-11-23 · Claude · #9 done. `FirestoreRepository` now takes an optional `client=` (tests inject a fake; prod unchanged). New: `tests/fake_firestore.py`, `tests/test_repositories.py`; README test section updated. Antigravity: no action needed, just include these in your next commit.
 - 2026-11-23 · Claude · Initial build of LabLink in `C:\PromptWars`; created this file. `.github/workflows/tests.yml` still needs to be created (task 1).
