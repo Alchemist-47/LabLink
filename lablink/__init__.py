@@ -50,6 +50,7 @@ def create_app(
     clock: Callable[[], datetime] = campus_now,
     config: dict | None = None,
 ) -> Flask:
+    """Build the Flask app. Tests inject repo, assistant and clock; production reads them from the environment."""
     logging.basicConfig(level=logging.INFO)
     app = Flask(__name__)
 

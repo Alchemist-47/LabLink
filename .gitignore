@@ -32,8 +32,9 @@ dist/
 .coverage
 htmlcov/
 
-# Claude Code & IDE files
+# Claude Code & IDE files (local agent setup, not project docs)
 .claude/
+CLAUDE.md
 .vscode/
 .idea/
 *.swp

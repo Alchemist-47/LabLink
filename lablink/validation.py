@@ -18,23 +18,27 @@ MAX_NEED_HOURS = 40
 
 
 class ValidationError(ValueError):
+    """Form input was invalid; `errors` lists every problem for the user."""
     def __init__(self, errors: list[str]):
         super().__init__("; ".join(errors))
         self.errors = errors
 
 
 def clean_text(value: str | None, max_len: int) -> str:
+    """Trim, collapse whitespace, drop NUL bytes and cap the length."""
     text = (value or "").replace("\x00", "").strip()
     text = re.sub(r"\s+", " ", text)
     return text[:max_len]
 
 
 def valid_id(value: str | None) -> str | None:
+    """The id if it matches the safe id pattern, else None."""
     return value if value and ID_PATTERN.fullmatch(value) else None
 
 
 @dataclass
 class RequestForm:
+    """A validated project request form."""
     project_title: str
     description: str
     deadline: date
@@ -44,6 +48,7 @@ class RequestForm:
 
 
 def parse_request_form(form, today: date, equipment_ids: set[str], faculty_ids: set[str]) -> RequestForm:
+    """Validate the project request form; raises ValidationError listing every problem at once."""
     errors: list[str] = []
     title = clean_text(form.get("project_title"), MAX_TITLE)
     description = clean_text(form.get("description"), MAX_TEXT)
@@ -51,36 +56,46 @@ def parse_request_form(form, today: date, equipment_ids: set[str], faculty_ids: 
         errors.append("Project title must be at least 3 characters.")
     if len(description) < 20:
         errors.append("Describe the project in at least 20 characters.")
-
-    deadline = None
-    try:
-        deadline = date.fromisoformat(form.get("deadline", ""))
-        if deadline <= today:
-            errors.append("Deadline must be in the future.")
-        elif deadline > today + timedelta(days=365):
-            errors.append("Deadline must be within a year.")
-    except ValueError:
-        errors.append("Enter a valid deadline date.")
-
+    deadline = _parse_deadline(form.get("deadline", ""), today, errors)
     guide_id = form.get("guide_id", "")
     if guide_id not in faculty_ids:
         errors.append("Choose a faculty guide from the list.")
+    project_type = _parse_project_type(form.get("project_type", ""), errors)
+    needs = _parse_needs(form, equipment_ids, errors)
+    if errors or deadline is None:
+        raise ValidationError(errors or ["Enter a valid deadline date."])
+    return RequestForm(title, description, deadline, guide_id, project_type, needs)
 
+
+def _parse_deadline(raw: str, today: date, errors: list[str]) -> date | None:
     try:
-        project_type = ProjectType(form.get("project_type", ""))
+        deadline = date.fromisoformat(raw)
+    except ValueError:
+        errors.append("Enter a valid deadline date.")
+        return None
+    if deadline <= today:
+        errors.append("Deadline must be in the future.")
+    elif deadline > today + timedelta(days=365):
+        errors.append("Deadline must be within a year.")
+    return deadline
+
+
+def _parse_project_type(raw: str, errors: list[str]) -> ProjectType:
+    try:
+        return ProjectType(raw)
     except ValueError:
         errors.append("Choose a project type.")
-        project_type = ProjectType.COURSEWORK
+        return ProjectType.COURSEWORK
 
+
+def _parse_needs(form, equipment_ids: set[str], errors: list[str]) -> list[tuple[str, int]]:
+    """Selected equipment with hours; unknown ids and out-of-range hours are reported, duplicates ignored."""
     needs: list[tuple[str, int]] = []
     for eq_id in form.getlist("equipment_id")[:MAX_NEEDS]:
         if eq_id not in equipment_ids:
             errors.append("Unknown equipment selected.")
             continue
-        try:
-            hours = int(form.get(f"hours_{eq_id}", "0"))
-        except ValueError:
-            hours = 0
+        hours = _to_int(form.get(f"hours_{eq_id}", "0"))
         if not 1 <= hours <= MAX_NEED_HOURS:
             errors.append(f"Hours for each item must be between 1 and {MAX_NEED_HOURS}.")
             continue
@@ -88,20 +103,26 @@ def parse_request_form(form, today: date, equipment_ids: set[str], faculty_ids: 
             needs.append((eq_id, hours))
     if not needs:
         errors.append("Select at least one piece of equipment.")
+    return needs
 
-    if errors or deadline is None:
-        raise ValidationError(errors or ["Enter a valid deadline date."])
-    return RequestForm(title, description, deadline, guide_id, project_type, needs)
+
+def _to_int(raw: str, default: int = 0) -> int:
+    try:
+        return int(raw)
+    except ValueError:
+        return default
 
 
 @dataclass
 class BookingForm:
+    """A validated booking form."""
     request_id: str
     start: datetime
     hours: int
 
 
 def parse_booking_form(form, now: datetime) -> BookingForm:
+    """Validate a booking form (project, start time, duration); raises ValidationError on any problem."""
     errors: list[str] = []
     request_id = valid_id(form.get("request_id"))
     if not request_id:

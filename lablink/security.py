@@ -20,6 +20,7 @@ CSP = (
 
 
 def csrf_token() -> str:
+    """This session's CSRF token, created on first use."""
     token = session.get(CSRF_SESSION_KEY)
     if not token:
         token = secrets.token_urlsafe(32)
@@ -84,6 +85,7 @@ class RateLimiter:
         self._lock = threading.Lock()
 
     def allow(self, key: str) -> bool:
+        """Record a hit for `key`; False once it exceeds the limit in the sliding window."""
         now = time.monotonic()
         with self._lock:
             hits = self._hits[key]
@@ -96,6 +98,7 @@ class RateLimiter:
 
 
 def init_security(app: Flask) -> None:
+    """Install CSRF checks, write rate limits and security headers on the app."""
     app.before_request(_check_csrf)
     app.before_request(_limit_writes)
     app.after_request(_set_headers)

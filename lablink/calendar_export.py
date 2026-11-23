@@ -52,6 +52,7 @@ def _utc(moment: datetime) -> str:
 
 
 def booking_to_ics(booking: Booking, equipment: Equipment, project_title: str, now: datetime) -> str:
+    """One confirmed booking as an RFC 5545 calendar file, in UTC, with a 15-minute reminder."""
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
@@ -79,6 +80,7 @@ def booking_to_ics(booking: Booking, equipment: Equipment, project_title: str, n
 
 @bp.get("/bookings/<booking_id>.ics")
 def booking_ics(booking_id: str):
+    """Download a confirmed booking as .ics. Only its owner or the lab coordinator may."""
     from .routes import current_user
     from .validation import valid_id
 

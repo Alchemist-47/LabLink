@@ -77,7 +77,12 @@ def parse(html: str) -> Page:
 
 
 def problems(html: str) -> list[str]:
+    """Every accessibility problem found on one page (empty list = clean)."""
     page = parse(html)
+    return _page_structure(page) + _element_problems(page) + _name_problems(page) + _table_problems(html)
+
+
+def _page_structure(page: Page) -> list[str]:
     found = []
     if not page.lang:
         found.append("missing <html lang>")
@@ -91,29 +96,42 @@ def problems(html: str) -> list[str]:
     dupes = [i for i, n in Counter(page.ids).items() if n > 1]
     if dupes:
         found.append(f"duplicate ids: {dupes}")
+    return found
+
+
+def _is_labelled(page: Page, index: int, a: dict[str, str]) -> bool:
+    return bool(
+        a.get("id") in page.label_for or a.get("aria-label") or a.get("aria-labelledby") or index in page.wrapped_controls
+    )
+
+
+def _element_problems(page: Page) -> list[str]:
+    found = []
     for index, (tag, a) in enumerate(page.elements):
-        if tag in LABELLABLE and a.get("type", "text") not in NOT_LABELLED_INPUTS:
-            labelled = (
-                a.get("id") in page.label_for
-                or a.get("aria-label")
-                or a.get("aria-labelledby")
-                or index in page.wrapped_controls
-            )
-            if not labelled:
-                found.append(f"unlabelled <{tag} name={a.get('name')!r}>")
+        needs_label = tag in LABELLABLE and a.get("type", "text") not in NOT_LABELLED_INPUTS
+        if needs_label and not _is_labelled(page, index, a):
+            found.append(f"unlabelled <{tag} name={a.get('name')!r}>")
         if tag == "img" and "alt" not in a:
             found.append(f"<img src={a.get('src')!r}> has no alt")
-        if a.get("tabindex", "0").lstrip("-").isdigit() and int(a.get("tabindex", "0")) > 0:
+        tabindex = a.get("tabindex", "0")
+        if tabindex.lstrip("-").isdigit() and int(tabindex) > 0:
             found.append(f"positive tabindex on <{tag}>")
         if tag == "th" and a.get("scope") not in ("col", "row"):
             found.append("<th> without scope")
-    for tag, a, text in page.named:
-        if not (text or a.get("aria-label") or a.get("aria-labelledby")):
-            found.append(f"<{tag}> with no accessible name ({a.get('href') or a.get('type')})")
-    tables = html.count("<table")
-    if tables and html.count("<caption") < tables:
-        found.append("table without <caption>")
     return found
+
+
+def _name_problems(page: Page) -> list[str]:
+    return [
+        f"<{tag}> with no accessible name ({a.get('href') or a.get('type')})"
+        for tag, a, text in page.named
+        if not (text or a.get("aria-label") or a.get("aria-labelledby"))
+    ]
+
+
+def _table_problems(html: str) -> list[str]:
+    tables = html.count("<table")
+    return ["table without <caption>"] if tables and html.count("<caption") < tables else []
 
 
 def check(client, path, method="get", **kw):

@@ -4,6 +4,17 @@
 
 LabLink is a GenAI-powered platform for sharing lab resources across a campus. Students describe what they need to do and find specialised equipment, development kits and workstations in **any** department. They request access for a project, and LabLink plans and books their sessions. Faculty approve requests with an AI brief. When too many teams want the same machine, a **transparent, deadline-aware fairness engine** resolves the clash, sometimes by proposing a swap, and Gemini explains every outcome in plain language.
 
+## Evaluation criteria at a glance
+
+| Criterion | Evidence (where to look) |
+|---|---|
+| **Code quality** | Layered `routes → services → pure domain modules` ([`lablink/`](lablink)); domain rules have no I/O ([`policy.py`](lablink/policy.py), [`planner.py`](lablink/planner.py), [`fairness.py`](lablink/fairness.py), [`scheduling.py`](lablink/scheduling.py)). **Enforced in CI:** ruff lint incl. **cyclomatic complexity ≤ 12 for every function** and the bandit security rules, **mypy** type checking ([`pyproject.toml`](pyproject.toml)). Average complexity 3.3; docstrings on the public API. Storage behind one interface with two implementations. |
+| **Security** | [`SECURITY.md`](SECURITY.md): CSRF on every form, strict CSP and security headers, server-side role and ownership checks, input validation and size limits, rate limits, prompt-injection handling, atomic booking, non-root container, `pip-audit` in CI. Tested in [`tests/test_security.py`](tests/test_security.py). |
+| **Efficiency** | **p50 1.2 ms, p95 2 ms, about 800 requests/s per worker, 2.3 MB peak heap** over 2,000 mixed requests ([`scripts/benchmark.py`](scripts/benchmark.py)). Gemini responses cached and rate-limited; faculty briefs generated once and stored. No JavaScript, self-hosted fonts, four runtime dependencies. |
+| **Testing** | **225 tests, 97% coverage, CI fails below 90%** ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)). Fairness, planner, rules, AI fallbacks with a fake Gemini, permissions, security, the same contract tests on both storage back ends, and edge cases found by fuzzing every route (about 15,000 hostile requests, zero server errors). |
+| **Accessibility** | Zero axe-core violations (WCAG 2.1 AA + best practice) on every page and role, desktop and mobile. **42 automated tests** ([`tests/test_accessibility.py`](tests/test_accessibility.py)) check every page for language, headings, landmarks, skip link, labels, names, tables and the contrast of every design colour pair. Keyboard-only, works without JavaScript. |
+| **Problem alignment** | Every clause of the brief maps to a working feature: see [How it covers the challenge](#how-it-covers-the-challenge). |
+
 ## Chosen vertical
 
 **Campus laboratory resource sharing**, for the challenge *LabLink: Making College Laboratories More Accessible*. There are three personas:
@@ -18,7 +29,7 @@ LabLink is a GenAI-powered platform for sharing lab resources across a campus. S
 | **A smart, dynamic assistant** | Students describe a task in plain words and Gemini finds equipment across all departments (`ai.search`). They describe a project once and Gemini proposes the equipment and hours (`ai.suggest_needs`). **Plan & book** (`planner.py`) then turns the project into concrete sessions and books them all in one click. Faculty get an AI **Who / Why / Risk** brief per request. Coordinators get AI explanations of every allocation and AI usage tips. Everything reacts to live data: availability, the waitlist, approvals, training records and weekly hours. |
 | **Logical decision making based on user context** | Every booking passes the same rules (`policy.py`), using the student's **training records**, **project approval** (only for high-demand equipment), **project deadline**, **other bookings** and **hours already used this week** (12-hour fair-use cap). Conflicts are ranked by **deadline urgency, project type (capstone > club > coursework), recent usage and waiting time** (`fairness.py`). The same request from two students can get different, explained outcomes. Faculty can only decide requests they guide; only the coordinator allocates. |
 | **Practical, real-world usability** | Requests never dead-end. A full slot comes with free slots before the deadline, the same kind of machine in another department, or the waitlist; a blocked booking says exactly why (for example "needs Laser Cutter safety training"). Ordinary equipment can be booked as soon as a project exists, and only high-demand machines wait for approval. Students always see their **lab hours this week**, and can **add any booking to their calendar** (`.ics` with a 15-minute reminder). Each machine has a **safety prep checklist**. The app works by keyboard and screen reader, on mobile, and without JavaScript. |
-| **Clean, maintainable code** | Layered design: thin routes → services (permissions) → pure domain modules (`policy`, `planner`, `fairness`, `scheduling`) with no I/O. Storage sits behind one interface (memory or Firestore). **216 tests, 96% coverage**, including the same contract tests on both storage back ends and automated accessibility tests. Ruff lint, **mypy type checking**, `pip-audit` and the tests run in CI on every push. Four runtime dependencies. |
+| **Clean, maintainable code** | Layered design: thin routes → services (permissions) → pure domain modules (`policy`, `planner`, `fairness`, `scheduling`) with no I/O. Storage sits behind one interface (memory or Firestore). **225 tests, 97% coverage**, including the same contract tests on both storage back ends and automated accessibility tests. Ruff lint (with a complexity limit of 12 per function), **mypy type checking**, `pip-audit` and the tests run in CI on every push. Four runtime dependencies. |
 
 ### What sets it apart
 - **Swaps, not just queues.** If every slot before an urgent deadline is taken, FairShare can ask a lower-priority team with a later deadline to move, and only to a slot that still meets *their* deadline.
@@ -99,7 +110,8 @@ lablink/
   security.py    CSRF, security headers, rate limiters, identity header
   repository.py  storage interface + in-memory store;  firestore_repo.py: Firestore
   calendar_export.py  booking → .ics calendar file
-tests/           216 tests: domain, services, routes, AI, storage contracts, security, accessibility
+scripts/         benchmark.py (speed and memory), eval_ai.py (real-Gemini checks)
+tests/           225 tests: domain, services, routes, AI, storage contracts, security, accessibility
 ```
 
 **Design choices**
@@ -107,7 +119,15 @@ tests/           216 tests: domain, services, routes, AI, storage contracts, sec
 - **Gemini is optional at runtime.** If there's no key, a timeout or a quota error, features fall back to keyword matching or templates and say so. Responses are cached and rate-limited.
 - **Lean and accessible.** Server-rendered HTML with no JavaScript, four runtime dependencies, one container.
 
+## Code quality and performance
+
+- **Small functions, enforced.** CI runs ruff with a cyclomatic-complexity limit of 12 per function (average 3.3), the bandit security rules, and mypy. Long decisions are split into named steps; for example, fair allocation reads as *requested machine → equivalent machine → fair swap → defer* (`_Planner.decide` in `fairness.py`).
+- **Pure domain logic.** `policy`, `planner`, `fairness` and `scheduling` take data and return decisions, with no database, web or AI calls, so they are fast to test and easy to reason about. Planner and allocation are deterministic.
+- **Measured speed** (`python scripts/benchmark.py`, 2,000 mixed requests across all roles with 10% booking attempts, Gemini off, one worker): p50 1.2 ms, p95 2 ms, p99 2.3 ms; about 800 requests/s; 2.3 MB peak Python heap. Fair allocation takes about 0.3 s even with 200 teams waiting for one machine.
+
 ## Security
+
+Full details: [`SECURITY.md`](SECURITY.md).
 
 ### Security model
 - **Demo mode (default, `DEMO_MODE=1`).** There is no sign-in, so judges can try every role from the "Viewing as" switcher. This is deliberate for the demo, and the page header says so.
@@ -150,7 +170,7 @@ Without any settings it runs with in-memory demo data and the keyword fallback. 
 ## Tests
 
 ```bash
-pytest --cov=lablink          # 216 tests, 96% coverage
+pytest --cov=lablink          # 225 tests, 97% coverage (fails below 90%)
 mypy                          # type check
 ruff check lablink tests
 ```
@@ -220,3 +240,7 @@ On first start, an empty Firestore database is seeded with the demo campus. To u
 | `WRITE_GLOBAL_RATE_LIMIT` | `300` | Form submissions per minute across all users |
 | `TRUST_PROXY` | auto | `1` behind an HTTPS proxy (auto on Render/Cloud Run): secure cookies + HSTS |
 | `CAMPUS_TZ` | `Asia/Kolkata` | Campus time zone |
+
+## License
+
+[MIT](LICENSE) © 2026 Alchemist-47

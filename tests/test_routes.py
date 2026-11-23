@@ -269,3 +269,29 @@ def test_equipment_page_shows_approval_and_training(client):
     page = client.get("/equipment/eq_uvvis").get_data(as_text=True)
     assert "Guide approval required" in page and "not on your record" in page
     assert "No approval needed" in client.get("/equipment/eq_esp32").get_data(as_text=True)
+
+
+def test_over_cap_student_sees_it_clearly(client):
+    login(client, "s_rahul")  # seeded slot squatter
+    page = client.get("/bookings").get_data(as_text=True)
+    assert "over the 12 h cap" in page and " of 12 h" not in page
+    login(client, "s_meera")
+    assert "of 12 h" in client.get("/bookings").get_data(as_text=True)
+
+
+def test_started_or_cancelled_bookings_cannot_be_cancelled(client, service):
+    from lablink.models import BookingStatus
+    past = next(b for b in service.repo.bookings_for_user("s_rahul") if b.end < service.now())
+    login(client, "s_rahul")
+    assert post(client, f"/bookings/{past.id}/cancel").status_code == 403
+    assert service.repo.get_booking(past.id).status == BookingStatus.CONFIRMED  # usage history can't be erased
+    assert f"/bookings/{past.id}/cancel" not in client.get("/bookings").get_data(as_text=True)
+    assert post(client, "/bookings/bk_p2/cancel").status_code == 302
+    assert post(client, "/bookings/bk_p2/cancel").status_code == 403  # already cancelled
+
+
+def test_book_all_twice_says_everything_is_booked(client):
+    login(client, "s_meera")
+    post(client, "/requests/rq_hand/plan/book")
+    r = client.post("/requests/rq_hand/plan/book", data={"csrf_token": "tok"}, follow_redirects=True)
+    assert "already booked" in r.get_data(as_text=True)

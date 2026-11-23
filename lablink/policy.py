@@ -26,15 +26,18 @@ WEEKLY_CAP_HOURS = 12
 
 @dataclass(frozen=True)
 class Problem:
+    """One rule a booking breaks: a stable code plus a message for the student."""
     code: str  # ownership | approval | training | deadline | weekly_cap
     message: str
 
 
 def week_start(day: date) -> date:
+    """Monday of the week containing `day` (the weekly cap runs Monday to Sunday)."""
     return day - timedelta(days=day.weekday())
 
 
 def deadline_cutoff(request: AccessRequest) -> datetime:
+    """Closing time on the project's deadline day; no session may end after it."""
     return datetime.combine(request.deadline, time(CLOSE_HOUR))
 
 
@@ -114,6 +117,7 @@ def check_booking(
     end: datetime,
     bookings: Iterable[Booking],
 ) -> list[Problem]:
+    """Every rule this booking would break (access, deadline, weekly cap), in one list."""
     problems = access_problems(student, equipment, request)
     if request is None or (problems and problems[0].code == "ownership"):
         return problems

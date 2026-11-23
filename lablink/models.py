@@ -13,18 +13,21 @@ from typing import Any
 
 
 class Role(StrEnum):
+    """Who is using LabLink: student, faculty guide, or lab coordinator (admin)."""
     STUDENT = "student"
     FACULTY = "faculty"
     ADMIN = "admin"
 
 
 class RequestStatus(StrEnum):
+    """Lifecycle of a project access request."""
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
 
 
 class ProjectType(StrEnum):
+    """Kind of project; it sets the project part of the fairness score."""
     CAPSTONE = "capstone"
     RESEARCH = "research"
     CLUB = "club"
@@ -32,12 +35,14 @@ class ProjectType(StrEnum):
 
 
 class RiskLevel(StrEnum):
+    """Safety risk of a machine, shown on its page and in faculty briefs."""
     LOW = "low"
     MODERATE = "moderate"
     HIGH = "high"
 
 
 class BookingStatus(StrEnum):
+    """Confirmed bookings hold capacity; waitlisted ones wait for fair allocation."""
     CONFIRMED = "confirmed"
     WAITLISTED = "waitlisted"
     CANCELLED = "cancelled"
@@ -45,6 +50,7 @@ class BookingStatus(StrEnum):
 
 @dataclass(frozen=True)
 class User:
+    """A student, faculty member or coordinator, with the safety trainings they have completed."""
     id: str
     name: str
     role: Role
@@ -55,6 +61,7 @@ class User:
 
 @dataclass(frozen=True)
 class Equipment:
+    """A bookable machine type with its unit count, lab location and access rules."""
     id: str
     name: str
     category: str
@@ -76,6 +83,7 @@ class Equipment:
 
 @dataclass
 class EquipmentNeed:
+    """Hours of one machine that a project request asks for."""
     equipment_id: str
     hours: int
 
@@ -98,11 +106,13 @@ class AccessRequest:
     decision_note: str = ""
 
     def needs_equipment(self, equipment_id: str) -> bool:
+        """True if this request asks for the given machine."""
         return any(n.equipment_id == equipment_id for n in self.needs)
 
 
 @dataclass
 class Booking:
+    """A time slot on one machine for one student's project."""
     id: str
     equipment_id: str
     user_id: str
@@ -115,9 +125,11 @@ class Booking:
 
     @property
     def hours(self) -> int:
+        """Length of the booking in whole hours."""
         return int((self.end - self.start).total_seconds() // 3600)
 
     def overlaps(self, start: datetime, end: datetime) -> bool:
+        """True if this booking shares any time with [start, end)."""
         return self.start < end and start < self.end
 
 
@@ -164,6 +176,7 @@ def _encode(value: Any) -> Any:
 
 
 def user_from_dict(d: dict[str, Any]) -> User:
+    """Rebuild a User from its stored (Firestore) form."""
     return User(
         id=d["id"],
         name=d["name"],
@@ -175,6 +188,7 @@ def user_from_dict(d: dict[str, Any]) -> User:
 
 
 def equipment_from_dict(d: dict[str, Any]) -> Equipment:
+    """Rebuild Equipment from its stored (Firestore) form."""
     return Equipment(
         id=d["id"],
         name=d["name"],
@@ -191,6 +205,7 @@ def equipment_from_dict(d: dict[str, Any]) -> Equipment:
 
 
 def request_from_dict(d: dict[str, Any]) -> AccessRequest:
+    """Rebuild an AccessRequest from its stored (Firestore) form."""
     return AccessRequest(
         id=d["id"],
         student_id=d["student_id"],
@@ -208,6 +223,7 @@ def request_from_dict(d: dict[str, Any]) -> AccessRequest:
 
 
 def booking_from_dict(d: dict[str, Any]) -> Booking:
+    """Rebuild a Booking from its stored (Firestore) form."""
     return Booking(
         id=d["id"],
         equipment_id=d["equipment_id"],

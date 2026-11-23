@@ -88,6 +88,7 @@ def open_day(today: date, n: int) -> date:
 
 
 def past_open_day(today: date, n: int) -> date:
+    """The nth lab-open day before today."""
     day = today
     count = 0
     while count < n:
@@ -102,6 +103,8 @@ def _at(day: date, hour: int) -> datetime:
 
 
 def build_demo_data(now: datetime) -> tuple[list[User], list[Equipment], list[AccessRequest], list[Booking]]:
+    """The demo campus: users, equipment, requests and bookings relative to `now`,
+    including a contested printer so fair allocation has something to resolve."""
     today = now.date()
     created = now - timedelta(days=4)
 
@@ -142,7 +145,8 @@ def build_demo_data(now: datetime) -> tuple[list[User], list[Equipment], list[Ac
         bookings.append(Booking(bid, eq, user, rq, _at(day, start_h), _at(day, end_h), made, status))
 
     d1, d2, d3 = open_day(today, 1), open_day(today, 2), open_day(today, 3)
-    # One coursework team booked the FDM printer early for days (slot squatting);
+    # One coursework team booked the FDM printer for days before the weekly cap existed
+    # (slot squatting): Rahul is over the cap, so he can't book more, and FairShare can move him.
     # the resin printer is also busy, so urgent teams have nowhere to go.
     book("bk_p1", "eq_fdm_printer", "s_rahul", "rq_arm", d1, 9, 18)
     book("bk_p2", "eq_fdm_printer", "s_rahul", "rq_arm", d2, 9, 18)
@@ -175,6 +179,7 @@ def build_demo_data(now: datetime) -> tuple[list[User], list[Equipment], list[Ac
 
 
 def seed_if_empty(repo: Repository, now: datetime) -> bool:
+    """Load the demo data into an empty repository. Returns True if it did."""
     if not repo.is_empty():
         return False
     repo.load(*build_demo_data(now))

@@ -20,7 +20,7 @@ from .models import (
     User,
 )
 from .planner import PlanItem, plan_project
-from .policy import access_problems, check_booking, hours_in_week, slot_problems
+from .policy import Problem, access_problems, check_booking, hours_in_week, slot_problems
 from .repository import Repository, new_id
 from .scheduling import (
     CLOSE_HOUR,
@@ -36,15 +36,18 @@ from .validation import BookingForm, RequestForm
 
 
 class PermissionDenied(Exception):
+    """The user may not do this (shown as 403)."""
     pass
 
 
 class NotFound(Exception):
+    """No such record (shown as 404)."""
     pass
 
 
 @dataclass
 class BookingResult:
+    """Outcome of a booking attempt, with suggested slots and alternatives when it fails."""
     status: str  # "confirmed" | "waitlisted" | "unavailable"
     booking: Booking | None = None
     slots: list = field(default_factory=list)
@@ -54,6 +57,7 @@ class BookingResult:
 
 
 class LabService:
+    """All business operations. Routes call these; rules live in policy, planner and fairness."""
     def __init__(self, repo: Repository, ai: LabAssistant, clock: Callable[[], datetime]):
         self.repo = repo
         self.ai = ai
@@ -61,18 +65,23 @@ class LabService:
 
     # Helpers ---------------------------------------------------------------
     def now(self) -> datetime:
+        """Current time from the injected clock (fixed in tests)."""
         return self.clock()
 
     def equipment_map(self) -> dict[str, Equipment]:
+        """Equipment by id."""
         return {e.id: e for e in self.repo.list_equipment()}
 
     def user_map(self) -> dict[str, User]:
+        """Users by id."""
         return {u.id: u for u in self.repo.list_users()}
 
     def faculty(self) -> list[User]:
+        """Faculty who can guide projects."""
         return [u for u in self.repo.list_users() if u.role == Role.FACULTY]
 
     def require_equipment(self, equipment_id: str) -> Equipment:
+        """The machine with this id, or NotFound."""
         eq = self.repo.get_equipment(equipment_id)
         if eq is None:
             raise NotFound("Equipment not found")
@@ -95,10 +104,12 @@ class LabService:
         return [(by_id[m.equipment_id], m.reason, m.tier) for m in matches if m.equipment_id in by_id], source
 
     def free_now(self, equipment: Equipment) -> int:
+        """Units of this machine free for the current hour."""
         now = self.now().replace(minute=0, second=0, microsecond=0)
         return free_units(self.repo.confirmed_bookings(equipment.id), equipment.units, now, now + timedelta(hours=1))
 
     def week_grid(self, equipment: Equipment, start: date, days: int = 7) -> list[tuple[date, list[tuple[int, int]]]]:
+        """Free units per hour for each day, for the availability grid."""
         bookings = self.repo.confirmed_bookings(equipment.id)
         out = []
         for i in range(days):
@@ -108,10 +119,12 @@ class LabService:
 
     # Project-based access requests -------------------------------------------
     def suggest_needs(self, description: str, student: User | None = None) -> tuple[list[Match], str]:
+        """Equipment a project description needs (Gemini, grounded in the student's words)."""
         department = student.department if student else ""
         return self.ai.suggest_needs(description, self.repo.list_equipment(), department)
 
     def create_request(self, student: User, form: RequestForm) -> AccessRequest:
+        """Save a new project request and its AI faculty brief."""
         if student.role != Role.STUDENT:
             raise PermissionDenied("Only students can submit access requests")
         request = AccessRequest(
@@ -145,6 +158,7 @@ class LabService:
         return request.ai_summary.splitlines()
 
     def visible_requests(self, user: User) -> list[AccessRequest]:
+        """Requests this user may see: own for students, guided for faculty, all for coordinator."""
         if user.role == Role.STUDENT:
             return self.repo.requests_for_student(user.id)
         if user.role == Role.FACULTY:
@@ -152,6 +166,7 @@ class LabService:
         return self.repo.list_requests()
 
     def decide_request(self, actor: User, request_id: str, approve: bool, note: str) -> AccessRequest:
+        """Approve or reject a pending request; only its guide or the coordinator may."""
         request = self.repo.get_request(request_id)
         if request is None:
             raise NotFound("Request not found")
@@ -175,51 +190,17 @@ class LabService:
         ]
 
     def hours_this_week(self, student: User) -> int:
+        """Confirmed lab hours this week, for the weekly cap meter."""
         return hours_in_week(self.repo.list_bookings(), student.id, self.now().date())
 
     def book(self, student: User, equipment_id: str, form: BookingForm, join_waitlist: bool) -> BookingResult:
+        """Book a slot after every rule passes; join the waitlist on request if it's full."""
         equipment = self.require_equipment(equipment_id)
-        request = self.repo.get_request(form.request_id)
-        if student.role != Role.STUDENT:
-            raise PermissionDenied("Only students can book equipment")
-        access = access_problems(student, equipment, request)
-        if request is None or (access and access[0].code == "ownership"):
-            raise PermissionDenied(access[0].message if access else "Choose one of your own project requests")
+        request, access = self._own_request(student, equipment, form.request_id)
         start, end = form.start, form.start + timedelta(hours=form.hours)
-        if not is_valid_window(start, end):
-            return BookingResult(
-                "unavailable",
-                message=f"Labs are open Monday–Saturday, 09:00–{CLOSE_HOUR}:00. Choose a slot within opening hours.",
-                slots=self._suggest_slots(equipment, form.hours, student_id=student.id),
-            )
-        problems = access + slot_problems(student, request, start, end, self.repo.list_bookings())
-        if problems:
-            return BookingResult(
-                "blocked",
-                message=" ".join(p.message for p in problems),
-                slots=[] if access else self._suggest_slots(
-                    equipment, form.hours, before=request.deadline, student_id=student.id
-                ),
-                can_waitlist=False,
-            )
-        for b in self.repo.bookings_for_user(student.id):
-            if (
-                b.status == BookingStatus.CONFIRMED
-                and b.equipment_id != equipment_id
-                and b.overlaps(start, end)
-            ):
-                other = self.repo.get_equipment(b.equipment_id)
-                other_name = other.name if other else b.equipment_id
-                return BookingResult(
-                    "unavailable",
-                    message=(
-                        f"Schedule clash: you already hold a confirmed slot on {other_name} "
-                        f"from {b.start:%a %d %b, %H:%M} to {b.end:%H:%M}. "
-                        "Students cannot book multiple stations concurrently."
-                    ),
-                    slots=self._suggest_slots(equipment, form.hours, before=request.deadline, student_id=student.id),
-                    can_waitlist=False,
-                )
+        refusal = self._refusal(student, equipment, request, access, start, end, form.hours)
+        if refusal:
+            return refusal
         booking = Booking(
             id=new_id("bk"),
             equipment_id=equipment_id,
@@ -244,6 +225,69 @@ class LabService:
             message="That slot is full. Pick a suggested slot, an equivalent machine, or join the waitlist.",
             slots=self._suggest_slots(equipment, form.hours, before=request.deadline, student_id=student.id),
             alternatives=self._alternatives(equipment, start, end),
+        )
+
+    def _own_request(
+        self, student: User, equipment: Equipment, request_id: str
+    ) -> tuple[AccessRequest, list[Problem]]:
+        """The student's own request for this booking, plus any access problems (training, approval)."""
+        request = self.repo.get_request(request_id)
+        if student.role != Role.STUDENT:
+            raise PermissionDenied("Only students can book equipment")
+        access = access_problems(student, equipment, request)
+        if request is None or (access and access[0].code == "ownership"):
+            raise PermissionDenied(access[0].message if access else "Choose one of your own project requests")
+        return request, access
+
+    def _refusal(
+        self,
+        student: User,
+        equipment: Equipment,
+        request: AccessRequest,
+        access: list[Problem],
+        start: datetime,
+        end: datetime,
+        hours: int,
+    ) -> BookingResult | None:
+        """Why this booking can't go ahead (opening hours, rules, a clash), or None if it can."""
+        if not is_valid_window(start, end):
+            return BookingResult(
+                "unavailable",
+                message=f"Labs are open Monday–Saturday, 09:00–{CLOSE_HOUR}:00. Choose a slot within opening hours.",
+                slots=self._suggest_slots(equipment, hours, student_id=student.id),
+            )
+        problems = access + slot_problems(student, request, start, end, self.repo.list_bookings())
+        if problems:
+            return BookingResult(
+                "blocked",
+                message=" ".join(p.message for p in problems),
+                slots=[] if access else self._suggest_slots(equipment, hours, before=request.deadline, student_id=student.id),
+                can_waitlist=False,
+            )
+        clash = self._own_clash(student, equipment.id, start, end)
+        if clash:
+            other = self.repo.get_equipment(clash.equipment_id)
+            return BookingResult(
+                "unavailable",
+                message=(
+                    f"Schedule clash: you already hold a confirmed slot on {other.name if other else clash.equipment_id} "
+                    f"from {clash.start:%a %d %b, %H:%M} to {clash.end:%H:%M}. "
+                    "Students cannot book multiple stations concurrently."
+                ),
+                slots=self._suggest_slots(equipment, hours, before=request.deadline, student_id=student.id),
+                can_waitlist=False,
+            )
+        return None
+
+    def _own_clash(self, student: User, equipment_id: str, start: datetime, end: datetime) -> Booking | None:
+        """The student's confirmed booking on another machine that overlaps this time, if any."""
+        return next(
+            (
+                b
+                for b in self.repo.bookings_for_user(student.id)
+                if b.status == BookingStatus.CONFIRMED and b.equipment_id != equipment_id and b.overlaps(start, end)
+            ),
+            None,
         )
 
     def _suggest_slots(
@@ -273,11 +317,17 @@ class LabService:
         return out
 
     def cancel_booking(self, user: User, booking_id: str) -> Booking:
+        """Cancel an upcoming booking. Past ones stay, because usage history feeds fairness."""
         booking = self.repo.get_booking(booking_id)
         if booking is None:
             raise NotFound("Booking not found")
         if booking.user_id != user.id and user.role != Role.ADMIN:
             raise PermissionDenied("You can only cancel your own bookings")
+        if booking.status == BookingStatus.CANCELLED:
+            raise PermissionDenied("This booking is already cancelled")
+        if booking.start <= self.now():
+            # Past usage feeds the fairness score, so it can't be erased after the fact.
+            raise PermissionDenied("This session has already started, so it can't be cancelled")
         booking.status = BookingStatus.CANCELLED
         self.repo.save_booking(booking)
         return booking
@@ -294,6 +344,7 @@ class LabService:
         return request
 
     def plan_for(self, student: User, request_id: str) -> tuple[AccessRequest, list[PlanItem]]:
+        """Plan the remaining sessions for one of the student's own live requests."""
         request = self._own_live_request(student, request_id)
         items = plan_project(request, student, self.equipment_map(), self.repo.list_bookings(), self.now())
         return request, items
@@ -335,6 +386,7 @@ class LabService:
 
     # Fair allocation -------------------------------------------------------
     def contested_equipment(self) -> list[tuple[Equipment, int]]:
+        """Machines with a waitlist, most contested first."""
         catalogue = self.equipment_map()
         counts: dict[str, int] = {}
         for b in self.repo.waitlist():
@@ -346,6 +398,7 @@ class LabService:
             raise PermissionDenied("Only faculty and the lab coordinator can allocate equipment")
 
     def plan(self, actor: User, equipment_id: str) -> list[AllocationDecision]:
+        """Staff: fair allocation decisions for a machine, each with an explanation."""
         self._require_planner(actor)
         equipment = self.require_equipment(equipment_id)
         requests = {r.id: r for r in self.repo.list_requests()}
@@ -419,6 +472,7 @@ class LabService:
 
     # Utilisation -----------------------------------------------------------
     def utilisation_stats(self, days: int = 14) -> list[dict]:
+        """Per machine: % booked over the last `days`, upcoming hours and waitlist size."""
         now = self.now()
         since = (now - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
         until = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)

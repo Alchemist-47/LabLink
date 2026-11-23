@@ -57,6 +57,7 @@ PROJECT_FACTOR = {
 
 @dataclass(frozen=True)
 class Score:
+    """A waitlisted booking's priority: urgency + project type + fairness + waiting time (max 100)."""
     total: float
     urgency: float
     project: float
@@ -64,6 +65,7 @@ class Score:
     waiting: float
 
     def breakdown(self) -> dict[str, float]:
+        """The four score parts, rounded, for display and explanations."""
         return {
             "urgency": self.urgency,
             "project": self.project,
@@ -83,6 +85,7 @@ def hours_used(bookings: list[Booking], user_id: str, now: datetime) -> int:
 
 
 def priority_score(request: AccessRequest, waited_since: datetime, used_hours: int, now: datetime) -> Score:
+    """Score one request: nearer deadline, higher-stakes project, fewer hours used and longer wait all raise it."""
     days_left = (request.deadline - now.date()).days
     urgency = URGENCY_WEIGHT * max(0.0, 1 - max(days_left, 0) / URGENCY_HORIZON_DAYS)
     project = PROJECT_WEIGHT * PROJECT_FACTOR[request.project_type]
@@ -99,6 +102,7 @@ def priority_score(request: AccessRequest, waited_since: datetime, used_hours: i
 
 
 def deadline_cutoff(request: AccessRequest, horizon: datetime) -> datetime:
+    """Latest moment a session may end for this request: closing time on its deadline, capped at `horizon`."""
     return min(datetime.combine(request.deadline, time(CLOSE_HOUR)), horizon)
 
 
@@ -144,6 +148,7 @@ class _Planner:
         self._score_cache: dict[str, Score] = {}
 
     def score_for(self, booking: Booking) -> Score | None:
+        """Cached priority score for a booking, or None if its request no longer exists."""
         request = self.requests.get(booking.request_id)
         if request is None:
             return None
@@ -153,45 +158,108 @@ class _Planner:
         return self._score_cache[booking.id]
 
     def place(self, booking: Booking, eq_id: str, start: datetime, end: datetime) -> None:
+        """Reserve a slot in this plan's working copy so later decisions can't reuse it."""
         self.booked[eq_id].append(replace(booking, equipment_id=eq_id, start=start, end=end,
                                           status=BookingStatus.CONFIRMED))
 
+    def decide(self, item: Booking, score: Score) -> AllocationDecision:
+        """Try, in order: the requested machine, an equivalent machine, a fair swap; else defer."""
+        cutoff = deadline_cutoff(self.requests[item.request_id], self.horizon)
+        return (
+            self.on_requested(item, score, cutoff)
+            or self.on_alternative(item, score, cutoff)
+            or self.try_swap(item, score, cutoff)
+            or self.defer(item, score)
+        )
+
+    def on_requested(self, item: Booking, score: Score, cutoff: datetime) -> AllocationDecision | None:
+        """Fit the booking on the requested machine before the deadline, preferring its original time."""
+        eq = self.equipment
+        fit = first_fit(self.booked[eq.id], eq.units, item.hours, self.earliest, cutoff, item.start)
+        if not fit:
+            return None
+        self.place(item, eq.id, *fit)
+        return AllocationDecision(
+            item.id, item.user_id, "", score.total, score.breakdown(), "allocated",
+            eq.id, *fit, reason="Fits on the requested equipment before the project deadline.",
+        )
+
+    def on_alternative(self, item: Booking, score: Score, cutoff: datetime) -> AllocationDecision | None:
+        """Fit the booking on an equivalent machine (same category, any department) before the deadline."""
+        for alt in self.alternatives:
+            fit = first_fit(self.booked[alt.id], alt.units, item.hours, self.earliest, cutoff)
+            if fit:
+                self.place(item, alt.id, *fit)
+                return AllocationDecision(
+                    item.id, item.user_id, "", score.total, score.breakdown(), "alternative",
+                    alt.id, *fit,
+                    reason=f"Requested equipment is full before the deadline; equivalent {alt.name} in {alt.department} is free.",
+                )
+        return None
+
+    def defer(self, item: Booking, score: Score) -> AllocationDecision:
+        """No room before the deadline: offer the earliest later slot, if any."""
+        eq = self.equipment
+        fit = first_fit(self.booked[eq.id], eq.units, item.hours, self.earliest, self.horizon)
+        if fit:
+            self.place(item, eq.id, *fit)
+        return AllocationDecision(
+            item.id, item.user_id, "", score.total, score.breakdown(), "deferred",
+            equipment_id=eq.id if fit else None,
+            start=fit[0] if fit else None,
+            end=fit[1] if fit else None,
+            reason="No capacity before the deadline on this or equivalent equipment; "
+            + ("earliest slot after the deadline offered." if fit else "no slot in the next three weeks."),
+        )
+
     def try_swap(self, item: Booking, score: Score, cutoff: datetime) -> AllocationDecision | None:
         """Find a lower-priority holder before `cutoff` who can move elsewhere."""
-        eq_id = self.equipment.id
+        for _, _, held, holder_request in sorted(self._swap_candidates(item, score, cutoff), key=lambda c: (c[0], c[1])):
+            decision = self._swap_with(item, score, held, holder_request)
+            if decision:
+                return decision
+        return None
+
+    def _swap_candidates(self, item: Booking, score: Score, cutoff: datetime) -> list[tuple]:
+        """Holders whose slot fits `item`, who score at least SWAP_MARGIN lower and have a later deadline."""
+        my_deadline = self.requests[item.request_id].deadline
         candidates = []
-        for held in self.booked[eq_id]:
-            if held.user_id == item.user_id or held.start < self.earliest or held.end > cutoff:
-                continue
-            if held.hours < item.hours:
+        for held in self.booked[self.equipment.id]:
+            if held.user_id == item.user_id or held.start < self.earliest or held.end > cutoff or held.hours < item.hours:
                 continue
             holder_request = self.requests.get(held.request_id)
             holder_score = self.score_for(held)
             if holder_request is None or holder_score is None:
                 continue
-            if holder_score.total + SWAP_MARGIN > score.total or holder_request.deadline <= self.requests[item.request_id].deadline:
+            if holder_score.total + SWAP_MARGIN > score.total or holder_request.deadline <= my_deadline:
                 continue
             candidates.append((holder_score.total, held.start, held, holder_request))
-        for _, _, held, holder_request in sorted(candidates, key=lambda c: (c[0], c[1])):
-            new_slot = (held.start, held.start + timedelta(hours=item.hours))
-            without = [b for b in self.booked[eq_id] if b.id != held.id]
-            trial = [*without, replace(held, start=new_slot[0], end=new_slot[1], id=item.id)]
-            holder_cutoff = deadline_cutoff(holder_request, self.horizon)
-            for move_eq in [eq_id, *[a.id for a in self.alternatives]]:
-                pool = trial if move_eq == eq_id else self.booked[move_eq]
-                moved = first_fit(pool, self.units[move_eq], held.hours, self.earliest, holder_cutoff)
-                if moved:
-                    self.booked[eq_id] = without
-                    self.place(item, eq_id, *new_slot)
-                    self.place(held, move_eq, *moved)
-                    return AllocationDecision(
-                        booking_id=item.id, student_id=item.user_id, project_title="",
-                        score=score.total, score_breakdown=score.breakdown(), outcome="swap",
-                        equipment_id=eq_id, start=new_slot[0], end=new_slot[1],
-                        reason="Swap proposed with a lower-priority team whose deadline is later.",
-                        swap_booking_id=held.id, swap_user_id=held.user_id,
-                        swap_equipment_id=move_eq, swap_start=moved[0], swap_end=moved[1],
-                    )
+        return candidates
+
+    def _swap_with(
+        self, item: Booking, score: Score, held: Booking, holder_request: AccessRequest
+    ) -> AllocationDecision | None:
+        """Give `held`'s slot to `item` if the holder can be moved before their own deadline."""
+        eq_id = self.equipment.id
+        new_slot = (held.start, held.start + timedelta(hours=item.hours))
+        without = [b for b in self.booked[eq_id] if b.id != held.id]
+        trial = [*without, replace(held, start=new_slot[0], end=new_slot[1], id=item.id)]
+        holder_cutoff = deadline_cutoff(holder_request, self.horizon)
+        for move_eq in [eq_id, *[a.id for a in self.alternatives]]:
+            pool = trial if move_eq == eq_id else self.booked[move_eq]
+            moved = first_fit(pool, self.units[move_eq], held.hours, self.earliest, holder_cutoff)
+            if moved:
+                self.booked[eq_id] = without
+                self.place(item, eq_id, *new_slot)
+                self.place(held, move_eq, *moved)
+                return AllocationDecision(
+                    booking_id=item.id, student_id=item.user_id, project_title="",
+                    score=score.total, score_breakdown=score.breakdown(), outcome="swap",
+                    equipment_id=eq_id, start=new_slot[0], end=new_slot[1],
+                    reason="Swap proposed with a lower-priority team whose deadline is later.",
+                    swap_booking_id=held.id, swap_user_id=held.user_id,
+                    swap_equipment_id=move_eq, swap_start=moved[0], swap_end=moved[1],
+                )
         return None
 
 
@@ -203,53 +271,17 @@ def plan_allocation(
     all_bookings: list[Booking],
     now: datetime,
 ) -> list[AllocationDecision]:
-    """Build a fair allocation plan for every waitlisted booking on `equipment`."""
+    """Build a fair allocation plan for every waitlisted booking on `equipment`.
+    Highest priority first, so earlier decisions take the best slots."""
     planner = _Planner(equipment, catalogue, all_bookings, requests, now)
-    ranked = []
-    for item in waitlist:
-        score = planner.score_for(item)
-        if score is not None:
-            ranked.append((score, item))
-    ranked.sort(key=lambda t: (-t[0].total, t[1].created_at, t[1].id))
-
+    scored = [(planner.score_for(item), item) for item in waitlist]
+    ranked = sorted(
+        ((score, item) for score, item in scored if score is not None),
+        key=lambda t: (-t[0].total, t[1].created_at, t[1].id),
+    )
     decisions: list[AllocationDecision] = []
     for score, item in ranked:
-        request = requests[item.request_id]
-        cutoff = deadline_cutoff(request, planner.horizon)
-        decision = None
-
-        fit = first_fit(planner.booked[equipment.id], equipment.units, item.hours, planner.earliest, cutoff, item.start)
-        if fit:
-            planner.place(item, equipment.id, *fit)
-            decision = AllocationDecision(
-                item.id, item.user_id, "", score.total, score.breakdown(), "allocated",
-                equipment.id, *fit, reason="Fits on the requested equipment before the project deadline.",
-            )
-        if decision is None:
-            for alt in planner.alternatives:
-                fit = first_fit(planner.booked[alt.id], alt.units, item.hours, planner.earliest, cutoff)
-                if fit:
-                    planner.place(item, alt.id, *fit)
-                    decision = AllocationDecision(
-                        item.id, item.user_id, "", score.total, score.breakdown(), "alternative",
-                        alt.id, *fit,
-                        reason=f"Requested equipment is full before the deadline; equivalent {alt.name} in {alt.department} is free.",
-                    )
-                    break
-        if decision is None:
-            decision = planner.try_swap(item, score, cutoff)
-        if decision is None:
-            fit = first_fit(planner.booked[equipment.id], equipment.units, item.hours, planner.earliest, planner.horizon)
-            if fit:
-                planner.place(item, equipment.id, *fit)
-            decision = AllocationDecision(
-                item.id, item.user_id, "", score.total, score.breakdown(), "deferred",
-                equipment_id=equipment.id if fit else None,
-                start=fit[0] if fit else None,
-                end=fit[1] if fit else None,
-                reason="No capacity before the deadline on this or equivalent equipment; "
-                + ("earliest slot after the deadline offered." if fit else "no slot in the next three weeks."),
-            )
-        decision.project_title = request.project_title
+        decision = planner.decide(item, score)
+        decision.project_title = requests[item.request_id].project_title
         decisions.append(decision)
     return decisions

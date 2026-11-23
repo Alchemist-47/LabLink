@@ -37,10 +37,12 @@ DEFAULT_USER = "s_ananya"
 
 
 def svc() -> LabService:
+    """The LabService for this app."""
     return current_app.extensions["lablink"]
 
 
 def demo_mode() -> bool:
+    """True when anyone may switch roles (no sign-in)."""
     return bool(current_app.config.get("DEMO_MODE", True))
 
 
@@ -53,6 +55,7 @@ def signed_in_user() -> User | None:
 
 
 def current_user() -> User:
+    """The signed-in user, or the demo user chosen in the switcher."""
     if not demo_mode():
         user = signed_in_user()
         if user is None:  # require_sign_in normally stops this earlier
@@ -84,6 +87,8 @@ def ai_allowed() -> bool:
 
 
 def handles_errors(view):
+    """Turn service errors into proper 403/404 pages instead of crashes."""
+
     @wraps(view)
     def wrapper(*args, **kwargs):
         try:
@@ -97,6 +102,7 @@ def handles_errors(view):
 
 
 def roles(*allowed: Role):
+    """Allow a view only for the given roles (403 otherwise)."""
     def decorator(view):
         @wraps(view)
         def wrapper(*args, **kwargs):
@@ -111,6 +117,7 @@ def roles(*allowed: Role):
 
 @bp.app_context_processor
 def inject_globals():
+    """Values every template needs: current user, roles, weekly hours. Never aborts."""
     # Never abort here: this also runs for the sign-in page, where nobody is signed in.
     me = current_user() if demo_mode() else signed_in_user()
     return {
@@ -126,11 +133,13 @@ def inject_globals():
 
 @bp.get("/healthz")
 def healthz():
+    """Liveness check for the host and the keep-alive ping."""
     return {"status": "ok"}
 
 
 @bp.post("/switch-user")
 def switch_user():
+    """Demo only: view the app as another user."""
     if not demo_mode():
         abort(404)
     user_id = valid_id(request.form.get("user_id"))
@@ -146,6 +155,7 @@ def switch_user():
 @handles_errors
 @roles(Role.ADMIN)
 def reset_demo():
+    """Coordinator only: restore the demo data."""
     if not demo_mode():
         abort(404)
     svc().reset_demo(current_user())
@@ -157,6 +167,7 @@ def reset_demo():
 # Discovery -----------------------------------------------------------------
 @bp.get("/")
 def discover():
+    """Find equipment by plain-language need, department or category."""
     query = clean_text(request.args.get("q"), MAX_QUERY)
     department = clean_text(request.args.get("department"), 60)
     category = clean_text(request.args.get("category"), 60)
@@ -179,6 +190,7 @@ def discover():
 @bp.route("/equipment/<equipment_id>", methods=["GET"])
 @handles_errors
 def equipment_detail(equipment_id: str, booking_result=None, checklist=None, form_values=None):
+    """One machine: availability grid, rules and booking form."""
     eq = svc().require_equipment(equipment_id)
     me = current_user()
     today = svc().now().date()
@@ -201,6 +213,7 @@ def equipment_detail(equipment_id: str, booking_result=None, checklist=None, for
 @handles_errors
 @roles(Role.STUDENT)
 def book(equipment_id: str):
+    """Book a slot (or join the waitlist) after every rule is checked."""
     try:
         form = parse_booking_form(request.form, svc().now())
     except ValidationError as exc:
@@ -217,6 +230,7 @@ def book(equipment_id: str):
 @bp.post("/equipment/<equipment_id>/checklist")
 @handles_errors
 def checklist(equipment_id: str):
+    """AI safety preparation checklist for using this machine on a project."""
     eq = svc().require_equipment(equipment_id)
     project = clean_text(request.form.get("project"), MAX_TEXT) or "general use"
     if not ai_allowed():
@@ -251,12 +265,14 @@ def _request_page(**extra):
 
 @bp.get("/requests")
 def requests_page():
+    """Project requests: the student's own, or the ones a faculty member guides."""
     return _request_page()
 
 
 @bp.post("/requests/suggest")
 @roles(Role.STUDENT)
 def suggest_equipment():
+    """Suggest equipment from the project description (Gemini, or keywords)."""
     description = clean_text(request.form.get("description"), MAX_TEXT)
     draft = {k: clean_text(request.form.get(k), MAX_TEXT) for k in ("project_title", "description", "deadline", "guide_id", "project_type")}
     if len(description) < 20:
@@ -274,6 +290,7 @@ def suggest_equipment():
 @handles_errors
 @roles(Role.STUDENT)
 def create_request():
+    """Submit a project access request to the faculty guide."""
     service = svc()
     try:
         form = parse_request_form(
@@ -296,6 +313,7 @@ def create_request():
 @handles_errors
 @roles(Role.FACULTY, Role.ADMIN)
 def decide(request_id: str):
+    """Faculty: approve or reject a request, with an optional note."""
     decision = request.form.get("decision")
     if decision not in ("approve", "reject"):
         abort(400)
@@ -309,6 +327,7 @@ def decide(request_id: str):
 @handles_errors
 @roles(Role.STUDENT)
 def plan_project_page(request_id: str):
+    """Show the planned sessions for a project before booking them."""
     request_, items = svc().plan_for(current_user(), request_id)
     return render_template(
         "plan.html",
@@ -324,11 +343,14 @@ def plan_project_page(request_id: str):
 @handles_errors
 @roles(Role.STUDENT)
 def book_plan(request_id: str):
+    """Book every planned session; each one is re-checked against the rules."""
     booked, failed = svc().book_plan(current_user(), request_id)
     if booked and not failed:
         flash(f"Booked all {booked} session{'s' if booked != 1 else ''}.", "success")
     elif booked:
         flash(f"Booked {booked} session(s). {failed} could not be booked because the slot was taken; plan again for new times.", "success")
+    elif not failed:
+        flash("Everything in this plan is already booked.", "success")
     else:
         flash("Nothing was booked: those slots are no longer free. Here is a fresh plan.", "error")
         return redirect(url_for("main.plan_project_page", request_id=request_id))
@@ -338,6 +360,7 @@ def book_plan(request_id: str):
 # Bookings -----------------------------------------------------------------
 @bp.get("/bookings")
 def my_bookings():
+    """Upcoming bookings: the student's own, or everyone's for staff."""
     me = current_user()
     bookings = svc().repo.bookings_for_user(me.id) if me.role == Role.STUDENT else svc().repo.list_bookings()
     now = svc().now()
@@ -345,6 +368,7 @@ def my_bookings():
     return render_template(
         "bookings.html",
         bookings=upcoming,
+        now=now,
         equipment=svc().equipment_map(),
         users=svc().user_map(),
         requests={r.id: r for r in svc().repo.list_requests()},
@@ -354,6 +378,7 @@ def my_bookings():
 @bp.post("/bookings/<booking_id>/cancel")
 @handles_errors
 def cancel_booking(booking_id: str):
+    """Cancel an upcoming booking."""
     svc().cancel_booking(current_user(), booking_id)
     flash("Booking cancelled.", "success")
     return redirect(url_for("main.my_bookings"))
@@ -364,6 +389,7 @@ def cancel_booking(booking_id: str):
 @handles_errors
 @roles(Role.FACULTY, Role.ADMIN)
 def allocate():
+    """Staff: fair allocation plan for a contested machine."""
     contested = svc().contested_equipment()
     selected = valid_id(request.args.get("equipment")) or (contested[0][0].id if contested else None)
     decisions = []
@@ -385,6 +411,7 @@ def allocate():
 @handles_errors
 @roles(Role.FACULTY, Role.ADMIN)
 def apply_allocation(equipment_id: str):
+    """Staff: apply the fair allocation plan."""
     applied = svc().apply_plan(current_user(), equipment_id)
     flash(f"Applied fair allocation: {applied} booking(s) confirmed. Students see the result in their bookings.", "success")
     return redirect(url_for("main.allocate"))
@@ -394,6 +421,7 @@ def apply_allocation(equipment_id: str):
 @bp.get("/insights")
 @roles(Role.ADMIN, Role.FACULTY)
 def insights():
+    """Staff: utilisation of every machine and what to do next."""
     stats = svc().utilisation_stats()
     tips, used_ai = svc().ai.utilisation_insights(stats) if ai_allowed() else ([], False)
     return render_template("insights.html", stats=stats, tips=tips, used_ai=used_ai)

@@ -29,6 +29,8 @@ BOOKINGS = "bookings"
 
 
 class FirestoreRepository(Repository):
+    """Firestore storage. Capacity checks run in a transaction, so two
+    concurrent bookings can't overbook a machine."""
     def __init__(self, project: str | None = None, database: str | None = None, client=None) -> None:
         """`client` lets tests inject a fake; production builds a real client from ADC."""
         if client is None:

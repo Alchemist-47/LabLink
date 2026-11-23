@@ -29,10 +29,12 @@
         {% if b.status.value == 'confirmed' %}
         <p class="booking-actions"><a href="{{ url_for('calendar.booking_ics', booking_id=b.id) }}" aria-label="Add {{ eq.name if eq else 'booking' }} on {{ b.start.strftime('%d %b %H:%M') }} to your calendar">Add to calendar</a></p>
         {% endif %}
+        {% if b.status.value != 'cancelled' and b.start > now %}
         <form method="post" action="{{ url_for('main.cancel_booking', booking_id=b.id) }}">
           {{ csrf() }}
           <button class="btn btn-small btn-danger" type="submit" aria-label="Cancel booking for {{ eq.name if eq else 'equipment' }} on {{ b.start.strftime('%d %b %H:%M') }}">Cancel</button>
         </form>
+        {% endif %}
         {% endif %}
       </td>
     </tr>

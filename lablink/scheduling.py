@@ -21,11 +21,13 @@ MAX_BOOKING_HOURS = CLOSE_HOUR - OPEN_HOUR
 
 @dataclass(frozen=True)
 class Slot:
+    """A candidate time window."""
     start: datetime
     end: datetime
 
     @property
     def hours(self) -> int:
+        """Length of the slot in whole hours."""
         return int((self.end - self.start).total_seconds() // 3600)
 
 
@@ -44,6 +46,7 @@ def is_valid_window(start: datetime, end: datetime) -> bool:
 
 
 def free_units(bookings: Iterable[Booking], units: int, start: datetime, end: datetime) -> int:
+    """Units of a machine still free for the whole of [start, end)."""
     return max(0, units - count_overlapping(bookings, start, end))
 
 
@@ -79,6 +82,7 @@ def find_free_slots(
     latest: datetime,
     limit: int = 5,
 ) -> list[Slot]:
+    """Free windows of `hours` between `earliest` and `latest`, earliest first."""
     slots: list[Slot] = []
     for slot in candidate_windows(hours, earliest, latest):
         if free_units(bookings, units, slot.start, slot.end) > 0:

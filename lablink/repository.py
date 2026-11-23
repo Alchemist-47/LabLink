@@ -25,10 +25,14 @@ from .models import (
 
 
 def new_id(prefix: str) -> str:
+    """A short random id with a readable prefix, e.g. `bk_3f9a1c2b`."""
     return f"{prefix}_{secrets.token_hex(6)}"
 
 
 class Repository(ABC):
+    """Storage interface. MemoryRepository and FirestoreRepository both implement it
+    and pass the same contract tests."""
+
     @abstractmethod
     def list_users(self) -> list[User]: ...
 
@@ -83,12 +87,15 @@ class Repository(ABC):
     # Convenience queries shared by both backends -------------------------
 
     def requests_for_student(self, student_id: str) -> list[AccessRequest]:
+        """Requests submitted by this student."""
         return [r for r in self.list_requests() if r.student_id == student_id]
 
     def requests_for_guide(self, guide_id: str) -> list[AccessRequest]:
+        """Requests that name this faculty member as guide."""
         return [r for r in self.list_requests() if r.guide_id == guide_id]
 
     def approved_requests_for(self, student_id: str) -> list[AccessRequest]:
+        """This student's approved requests."""
         return [
             r
             for r in self.requests_for_student(student_id)
@@ -96,26 +103,31 @@ class Repository(ABC):
         ]
 
     def bookings_for_user(self, user_id: str) -> list[Booking]:
+        """All of this user's bookings, any status."""
         return [b for b in self.list_bookings() if b.user_id == user_id]
 
     def confirmed_bookings(self, equipment_id: str) -> list[Booking]:
+        """Bookings that currently hold capacity on a machine."""
         return [
             b for b in self.list_bookings(equipment_id) if b.status == BookingStatus.CONFIRMED
         ]
 
     def waitlist(self, equipment_id: str | None = None) -> list[Booking]:
+        """Waitlisted bookings, oldest first, optionally for one machine."""
         return [
             b for b in self.list_bookings(equipment_id) if b.status == BookingStatus.WAITLISTED
         ]
 
 
 def count_overlapping(bookings: Iterable[Booking], start: datetime, end: datetime) -> int:
+    """Number of confirmed bookings that overlap [start, end)."""
     return sum(
         1 for b in bookings if b.status == BookingStatus.CONFIRMED and b.overlaps(start, end)
     )
 
 
 class MemoryRepository(Repository):
+    """Thread-safe in-memory storage, used for the demo and tests."""
     def __init__(self) -> None:
         self._users: dict[str, User] = {}
         self._equipment: dict[str, Equipment] = {}

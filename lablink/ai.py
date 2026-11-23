@@ -74,6 +74,7 @@ MIN_TOKEN = 3
 
 @dataclass(frozen=True)
 class Match:
+    """One equipment suggestion: why it fits, suggested hours, and tier (`needed` or `consider`)."""
     equipment_id: str
     reason: str
     hours: int = 0
@@ -156,6 +157,8 @@ def _clean(text: str) -> str:
 
 
 class LabAssistant:
+    """Gemini behind a small, safe interface. Every method has a deterministic fallback,
+    so the app works the same with no API key, a timeout or a bad answer."""
     def __init__(self, client: Any | None = None, model: str = DEFAULT_MODEL) -> None:
         self._client = client
         self._model = model
@@ -185,6 +188,7 @@ class LabAssistant:
 
     @property
     def enabled(self) -> bool:
+        """True when a Gemini client is configured."""
         return self._client is not None
 
     # Low-level call --------------------------------------------------------
@@ -348,41 +352,8 @@ class LabAssistant:
     def explain_plan(
         self, decisions: list[AllocationDecision], users: dict[str, User], catalogue: dict[str, Equipment]
     ) -> dict[str, str]:
-        rows = []
-        for rank, d in enumerate(decisions, 1):
-            eq = catalogue.get(d.equipment_id or "")
-            rows.append(
-                {
-                    "booking_id": d.booking_id,
-                    "rank": rank,
-                    "student": users[d.student_id].name if d.student_id in users else d.student_id,
-                    "project": d.project_title[:120],
-                    "score": d.score,
-                    "score_parts": d.score_breakdown,
-                    "outcome": d.outcome,
-                    "equipment": eq.name if eq else None,
-                    "slot": f"{d.start:%a %d %b %H:%M}-{d.end:%H:%M}" if d.start and d.end else None,
-                    "reason": d.reason,
-                    "moves_team": users[d.swap_user_id].name if d.swap_user_id in users else None,
-                }
-            )
-        schema = {
-            "type": "object",
-            "properties": {
-                "explanations": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "booking_id": {"type": "string"},
-                            "text": {"type": "string"},
-                        },
-                        "required": ["booking_id", "text"],
-                    },
-                }
-            },
-            "required": ["explanations"],
-        }
+        """Plain-language reason for each allocation decision. Gemini only words them; outcomes are fixed."""
+        rows = [_decision_row(rank, d, users, catalogue) for rank, d in enumerate(decisions, 1)]
         prompt = (
             "A deterministic fair-scheduling algorithm produced this allocation for a contested lab "
             "machine. Scores: urgency (0-40, nearer deadline is higher), project (0-20, capstone/research "
@@ -392,69 +363,119 @@ class LabAssistant:
             "one or two friendly sentences addressed to the student explaining their outcome and why it "
             "is fair. Do not change any outcome.\n" + json.dumps(rows, default=str)
         )
-        data = self._generate_json(prompt, schema)
-        valid = {d.booking_id for d in decisions}
-        if isinstance(data, dict):
-            out = {
-                e["booking_id"]: str(e["text"])[:500]
-                for e in data.get("explanations", [])
-                if isinstance(e, dict) and e.get("booking_id") in valid
-            }
-            if out:
-                return out
+        out = _valid_explanations(self._generate_json(prompt, EXPLANATION_SCHEMA), {d.booking_id for d in decisions})
+        if out:
+            return out
         return {d.booking_id: _template_explanation(d, rank, catalogue) for rank, d in enumerate(decisions, 1)}
 
     def utilisation_insights(self, stats: list[dict[str, Any]]) -> tuple[list[str], bool]:
+        """Up to 3 actions for the lab coordinator, and whether Gemini wrote them (else rule-based)."""
         schema = {
             "type": "object",
             "properties": {"insights": {"type": "array", "items": {"type": "string"}}},
             "required": ["insights"],
         }
-        cleaned_stats = [
-            {
-                "machine": s.get("name", ""),
-                "department": s.get("department", ""),
-                "units": s.get("units", 1),
-                "booked_percent_last_14_days": s.get("utilisation", 0),
-                "confirmed_hours_coming_up": s.get("upcoming_hours", 0),
-                "teams_on_waitlist": s.get("waitlisted", 0),
-                "status": _usage_status(s),
-            }
-            for s in stats
-        ]
-        departments = sorted({str(s.get("department", "")) for s in stats if s.get("department")})
-        prompt = (
-            "You advise a campus lab coordinator who can act today. Give exactly 3 recommendations, "
-            "most urgent first. Each is ONE plain sentence of at most 25 words that names the action, "
-            "the machine(s) (at most 2, names exactly as given) and the reason from the data.\n"
-            "Pick actions from this list, matching each machine's status:\n"
-            "- queue: run fair allocation on it, or send waiting teams to a similar machine from the data\n"
-            "- busy: add evening or weekend slots, or a second unit\n"
-            "- idle: promote it to students in named OTHER departments who could use it\n"
-            "- steady: no action needed, so skip it\n"
-            f"Departments: {', '.join(departments)}.\n"
-            "Do NOT start with Monitor, Review, Inspect, Check, Track, Observe or Consider, and do not just "
-            "restate the numbers. Quote a number only if it is in the data, with its unit "
-            "(percent booked, hours coming up, teams waiting). Never invent numbers or use ids.\n"
-            "Example: Run fair allocation on the Ultimaker S5 3D Printer, where 4 teams are waiting.\n"
-            + json.dumps(cleaned_stats)
-        )
-        data = self._generate_json(prompt, schema)
+        data = self._generate_json(_insights_prompt(stats), schema)
         if isinstance(data, dict) and data.get("insights"):
-            id_to_name = {s["id"]: s["name"] for s in stats if "id" in s and "name" in s and s["id"]}
-            processed = []
-            for raw in data["insights"]:
-                tip = str(raw).strip()
-                for eq_id, eq_name in id_to_name.items():
-                    tip = tip.replace(eq_id, eq_name)
-                if not tip or "eq_" in tip or len(tip) > 220 or tip.split()[0].lower().strip(",:") in WEAK_VERBS:
-                    continue
-                processed.append(tip)
-                if len(processed) == 3:
-                    break
-            if processed:
-                return processed, True
+            tips = _clean_insights(data["insights"], stats)
+            if tips:
+                return tips, True
         return _rule_insights(stats), False
+
+
+EXPLANATION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "explanations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"booking_id": {"type": "string"}, "text": {"type": "string"}},
+                "required": ["booking_id", "text"],
+            },
+        }
+    },
+    "required": ["explanations"],
+}
+
+
+def _decision_row(rank: int, d: AllocationDecision, users: dict[str, User], catalogue: dict[str, Equipment]) -> dict:
+    """One allocation decision as plain facts for the explanation prompt."""
+    eq = catalogue.get(d.equipment_id or "")
+    return {
+        "booking_id": d.booking_id,
+        "rank": rank,
+        "student": users[d.student_id].name if d.student_id in users else d.student_id,
+        "project": d.project_title[:120],
+        "score": d.score,
+        "score_parts": d.score_breakdown,
+        "outcome": d.outcome,
+        "equipment": eq.name if eq else None,
+        "slot": f"{d.start:%a %d %b %H:%M}-{d.end:%H:%M}" if d.start and d.end else None,
+        "reason": d.reason,
+        "moves_team": users[d.swap_user_id].name if d.swap_user_id in users else None,
+    }
+
+
+def _valid_explanations(data: Any, valid_ids: set[str]) -> dict[str, str]:
+    """Keep only explanations for bookings that are really in the plan."""
+    if not isinstance(data, dict):
+        return {}
+    return {
+        e["booking_id"]: str(e["text"])[:500]
+        for e in data.get("explanations", [])
+        if isinstance(e, dict) and e.get("booking_id") in valid_ids
+    }
+
+
+def _insights_prompt(stats: list[dict[str, Any]]) -> str:
+    """Usage data without internal ids, plus a status per machine so Gemini picks a fitting action."""
+    rows = [
+        {
+            "machine": s.get("name", ""),
+            "department": s.get("department", ""),
+            "units": s.get("units", 1),
+            "booked_percent_last_14_days": s.get("utilisation", 0),
+            "confirmed_hours_coming_up": s.get("upcoming_hours", 0),
+            "teams_on_waitlist": s.get("waitlisted", 0),
+            "status": _usage_status(s),
+        }
+        for s in stats
+    ]
+    departments = sorted({str(s.get("department", "")) for s in stats if s.get("department")})
+    return (
+        "You advise a campus lab coordinator who can act today. Give exactly 3 recommendations, "
+        "most urgent first. Each is ONE plain sentence of at most 25 words that names the action, "
+        "the machine(s) (at most 2, names exactly as given) and the reason from the data.\n"
+        "Pick actions from this list, matching each machine's status:\n"
+        "- queue: run fair allocation on it, or send waiting teams to a similar machine from the data\n"
+        "- busy: add evening or weekend slots, or a second unit\n"
+        "- idle: promote it to students in named OTHER departments who could use it\n"
+        "- steady: no action needed, so skip it\n"
+        f"Departments: {', '.join(departments)}.\n"
+        "Do NOT start with Monitor, Review, Inspect, Check, Track, Observe or Consider, and do not just "
+        "restate the numbers. Quote a number only if it is in the data, with its unit "
+        "(percent booked, hours coming up, teams waiting). Never invent numbers or use ids.\n"
+        "Example: Run fair allocation on the Ultimaker S5 3D Printer, where 4 teams are waiting.\n"
+        + json.dumps(rows)
+    )
+
+
+def _clean_insights(raw_tips: list[Any], stats: list[dict[str, Any]]) -> list[str]:
+    """Swap any leaked ids for names; drop empty, over-long or vague tips; keep at most 3."""
+    id_to_name = {s["id"]: s["name"] for s in stats if "id" in s and "name" in s and s["id"]}
+    tips = []
+    for raw in raw_tips:
+        tip = str(raw).strip()
+        for eq_id, eq_name in id_to_name.items():
+            tip = tip.replace(eq_id, eq_name)
+        if _is_usable_tip(tip):
+            tips.append(tip)
+    return tips[:3]
+
+
+def _is_usable_tip(tip: str) -> bool:
+    return bool(tip) and "eq_" not in tip and len(tip) <= 220 and tip.split()[0].lower().strip(",:") not in WEAK_VERBS
 
 
 def _schema(with_hours: bool) -> dict[str, Any]:
@@ -488,29 +509,32 @@ def _accept(data: dict[str, Any], source: str, catalogue: list[Equipment], limit
     if data.get("project_kind") == "software_only":
         return []
     valid = {e.id for e in catalogue}
-    needed: list[Match] = []
-    consider: list[Match] = []
     items = data.get("items")
-    for item in items if isinstance(items, list) else []:
-        if not isinstance(item, dict) or item.get("id") not in valid:
-            continue
-        task = str(item.get("task", ""))
-        if not _signal_tokens(task):
-            continue
-        tier = item.get("tier")
-        if tier not in (TIER_NEEDED, TIER_CONSIDER):
-            continue
-        if tier == TIER_NEEDED and not grounded(str(item.get("evidence", "")), source):
-            tier = TIER_CONSIDER
-        hours = 0
-        if with_hours:
-            try:
-                hours = max(1, min(40, int(item.get("hours", 4))))
-            except (TypeError, ValueError):
-                hours = 4
-        reason = str(item.get("reason") or task)[:300]
-        (needed if tier == TIER_NEEDED else consider).append(Match(item["id"], reason, hours, tier))
-    return _dedupe(needed + consider)[:limit]
+    matches = [_accept_item(item, valid, source, with_hours) for item in (items if isinstance(items, list) else [])]
+    kept = [m for m in matches if m is not None]
+    ordered = [m for m in kept if m.tier == TIER_NEEDED] + [m for m in kept if m.tier != TIER_NEEDED]
+    return _dedupe(ordered)[:limit]
+
+
+def _accept_item(item: Any, valid: set[str], source: str, with_hours: bool) -> Match | None:
+    """One proposed item as a Match, or None if it fails a check."""
+    if not isinstance(item, dict) or item.get("id") not in valid:
+        return None
+    task = str(item.get("task", ""))
+    tier = item.get("tier")
+    if not _signal_tokens(task) or tier not in (TIER_NEEDED, TIER_CONSIDER):
+        return None
+    if tier == TIER_NEEDED and not grounded(str(item.get("evidence", "")), source):
+        tier = TIER_CONSIDER
+    hours = _item_hours(item.get("hours", 4)) if with_hours else 0
+    return Match(item["id"], str(item.get("reason") or task)[:300], hours, tier)
+
+
+def _item_hours(raw: Any) -> int:
+    try:
+        return max(1, min(40, int(raw)))
+    except (TypeError, ValueError):
+        return 4
 
 
 def _dedupe(matches: list[Match]) -> list[Match]:
@@ -524,30 +548,31 @@ def _dedupe(matches: list[Match]) -> list[Match]:
 
 
 def _template_explanation(d: AllocationDecision, rank: int, catalogue: dict[str, Equipment]) -> str:
+    """Rule-based explanation, used when Gemini is unavailable."""
     parts = d.score_breakdown
     why = (
         f"You ranked #{rank} with a priority score of {d.score} "
         f"(urgency {parts['urgency']}, project {parts['project']}, fairness {parts['fairness']}, "
         f"waiting {parts['waiting']})."
     )
-    eq = catalogue.get(d.equipment_id or "")
+    return f"{why} {_outcome_sentence(d, catalogue.get(d.equipment_id or ''))}"
+
+
+def _outcome_sentence(d: AllocationDecision, eq: Equipment | None) -> str:
     name = eq.name if eq else "the machine"
-    where = f" ({eq.department})" if eq else ""
-    if d.outcome == "allocated" and d.start and d.end:
-        return f"{why} You get {name} on {d.start:%a %d %b, %H:%M}–{d.end:%H:%M}."
-    if d.outcome == "alternative" and d.start and d.end:
-        return (
-            f"{why} The requested machine is full before your deadline, so you are offered "
-            f"{name}{where} on {d.start:%a %d %b, %H:%M}–{d.end:%H:%M}."
-        )
-    if d.outcome == "swap" and d.start and d.end:
-        return (
-            f"{why} Every slot before your deadline was taken, so a lower-priority team with a later "
-            f"deadline is asked to move, giving you {name} on {d.start:%a %d %b, %H:%M}–{d.end:%H:%M}."
-        )
+    if d.start and d.end and d.outcome in ("allocated", "alternative", "swap"):
+        slot = f"{name}{f' ({eq.department})' if eq and d.outcome == 'alternative' else ''} on {d.start:%a %d %b, %H:%M}–{d.end:%H:%M}"
+        return {
+            "allocated": f"You get {slot}.",
+            "alternative": f"The requested machine is full before your deadline, so you are offered {slot}.",
+            "swap": (
+                "Every slot before your deadline was taken, so a lower-priority team with a later "
+                f"deadline is asked to move, giving you {slot}."
+            ),
+        }[d.outcome]
     if d.start:
-        return f"{why} No capacity before your deadline; the earliest slot is {d.start:%a %d %b, %H:%M}. Please talk to your guide."
-    return f"{why} No capacity in the next three weeks; please talk to your guide or the lab coordinator."
+        return f"No capacity before your deadline; the earliest slot is {d.start:%a %d %b, %H:%M}. Please talk to your guide."
+    return "No capacity in the next three weeks; please talk to your guide or the lab coordinator."
 
 
 WEAK_VERBS = {"monitor", "review", "inspect", "check", "track", "observe", "consider", "keep", "watch"}
