@@ -110,6 +110,36 @@ def test_cancel_only_own_booking(service):
     assert service.cancel_booking(user(service, "s_rahul"), "bk_p1").status == BookingStatus.CANCELLED
 
 
+def test_student_cannot_book_concurrent_overlapping_slots_on_different_equipment(service):
+    meera = user(service, "s_meera")
+    monday = datetime(2026, 11, 30, 10)  # 10:00 - 12:00
+
+    # Meera books DSO from 10:00 to 12:00
+    first = service.book(meera, "eq_dso", BookingForm("rq_hand", monday, 2), False)
+    assert first.status == "confirmed"
+
+    # Attempt 1: Booking 3D printer overlapping from 11:00 to 13:00 (1 hour overlap) is blocked
+    clash_slot = service.book(meera, "eq_fdm_printer", BookingForm("rq_hand", datetime(2026, 11, 30, 11), 2), False)
+    assert clash_slot.status == "unavailable"
+    assert "Schedule clash" in clash_slot.message
+    assert "Keysight" in clash_slot.message
+    assert clash_slot.can_waitlist is False
+
+    # Attempt 2: Even with join_waitlist=True, the clashing slot cannot be waitlisted
+    clash_waitlist = service.book(meera, "eq_fdm_printer", BookingForm("rq_hand", datetime(2026, 11, 30, 11), 2), True)
+    assert clash_waitlist.status == "unavailable"
+    assert "Schedule clash" in clash_waitlist.message
+    assert clash_waitlist.can_waitlist is False
+
+    # Suggested slots should not include times clashing with Meera's existing booking
+    for s in clash_slot.slots:
+        assert not (s.start.date() == monday.date() and s.start.hour in (10, 11))
+
+    # Adjacent non-overlapping slot (12:00 to 14:00) is allowed
+    adjacent = service.book(meera, "eq_fdm_printer", BookingForm("rq_hand", datetime(2026, 11, 30, 12), 2), False)
+    assert adjacent.status == "confirmed"
+
+
 def test_utilisation_stats_shape(service):
     stats = service.utilisation_stats()
     assert stats[0]["id"] == "eq_fdm_printer" and stats[0]["waitlisted"] == 4

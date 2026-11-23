@@ -138,3 +138,24 @@ def test_suggest_shows_no_equipment_message_for_software(client):
     page = r.get_data(as_text=True)
     assert r.status_code == 200 and "No lab equipment needed" in page
     assert 'checked' not in page.split("Equipment and total hours")[1].split("</fieldset>")[0]
+
+
+def test_concurrent_booking_clash_returns_409(client, service):
+    login(client, "s_meera")
+    monday = "2026-11-30"
+    r1 = post(
+        client,
+        "/equipment/eq_dso/book",
+        {"request_id": "rq_hand", "date": monday, "start_hour": "10", "hours": "2"},
+    )
+    assert r1.status_code == 302
+
+    r2 = post(
+        client,
+        "/equipment/eq_fdm_printer/book",
+        {"request_id": "rq_hand", "date": monday, "start_hour": "11", "hours": "2"},
+    )
+    assert r2.status_code == 409
+    html = r2.get_data(as_text=True)
+    assert "Schedule clash" in html
+    assert "Join the waitlist instead" not in html

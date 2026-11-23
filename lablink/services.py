@@ -47,6 +47,7 @@ class BookingResult:
     slots: list = field(default_factory=list)
     alternatives: list[tuple[Equipment, int]] = field(default_factory=list)
     message: str = ""
+    can_waitlist: bool = True
 
 
 class LabService:
@@ -177,8 +178,26 @@ class LabService:
             return BookingResult(
                 "unavailable",
                 message=f"Labs are open Monday–Saturday, 09:00–{CLOSE_HOUR}:00. Choose a slot within opening hours.",
-                slots=self._suggest_slots(equipment, form.hours),
+                slots=self._suggest_slots(equipment, form.hours, student_id=student.id),
             )
+        for b in self.repo.bookings_for_user(student.id):
+            if (
+                b.status == BookingStatus.CONFIRMED
+                and b.equipment_id != equipment_id
+                and b.overlaps(start, end)
+            ):
+                other = self.repo.get_equipment(b.equipment_id)
+                other_name = other.name if other else b.equipment_id
+                return BookingResult(
+                    "unavailable",
+                    message=(
+                        f"Schedule clash: you already hold a confirmed slot on {other_name} "
+                        f"from {b.start:%a %d %b, %H:%M} to {b.end:%H:%M}. "
+                        "Students cannot book multiple stations concurrently."
+                    ),
+                    slots=self._suggest_slots(equipment, form.hours, before=request.deadline, student_id=student.id),
+                    can_waitlist=False,
+                )
         booking = Booking(
             id=new_id("bk"),
             equipment_id=equipment_id,
@@ -201,11 +220,13 @@ class LabService:
         return BookingResult(
             "unavailable",
             message="That slot is full. Pick a suggested slot, an equivalent machine, or join the waitlist.",
-            slots=self._suggest_slots(equipment, form.hours, before=request.deadline),
+            slots=self._suggest_slots(equipment, form.hours, before=request.deadline, student_id=student.id),
             alternatives=self._alternatives(equipment, start, end),
         )
 
-    def _suggest_slots(self, equipment: Equipment, hours: int, before: date | None = None):
+    def _suggest_slots(
+        self, equipment: Equipment, hours: int, before: date | None = None, student_id: str | None = None
+    ):
         now = self.now()
         latest = now + timedelta(days=21)
         if before:
@@ -213,6 +234,11 @@ class LabService:
         slots = find_free_slots(
             self.repo.confirmed_bookings(equipment.id), equipment.units, hours, now + timedelta(hours=1), latest, limit=40
         )
+        if student_id:
+            user_bookings = [
+                b for b in self.repo.bookings_for_user(student_id) if b.status == BookingStatus.CONFIRMED
+            ]
+            slots = [s for s in slots if not any(b.overlaps(s.start, s.end) for b in user_bookings)]
         return spread_slots(slots, 5)
 
     def _alternatives(self, equipment: Equipment, start: datetime, end: datetime) -> list[tuple[Equipment, int]]:

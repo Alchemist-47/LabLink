@@ -52,7 +52,7 @@
       {% endfor %}
     </ul>
     {% endif %}
-    {% if result.status == 'unavailable' and form.request_id %}
+    {% if result.status == 'unavailable' and form.request_id and result.can_waitlist %}
     <form method="post" action="{{ url_for('main.book', equipment_id=eq.id) }}">
       {{ csrf() }}
       {% for k in ('request_id', 'date', 'start_hour', 'hours') %}<input type="hidden" name="{{ k }}" value="{{ form[k] }}">{% endfor %}
