@@ -418,15 +418,25 @@ class LabAssistant:
                 "booked_percent_last_14_days": s.get("utilisation", 0),
                 "confirmed_hours_coming_up": s.get("upcoming_hours", 0),
                 "teams_on_waitlist": s.get("waitlisted", 0),
+                "status": _usage_status(s),
             }
             for s in stats
         ]
+        departments = sorted({str(s.get("department", "")) for s in stats if s.get("department")})
         prompt = (
-            "You advise a campus lab coordinator. Give exactly 3 recommendations. "
-            "Each is ONE plain sentence of at most 25 words that starts with a verb, "
-            "names at most 2 machines using the machine names exactly as given, and "
-            "quotes a number only if it appears in the data, with its unit "
+            "You advise a campus lab coordinator who can act today. Give exactly 3 recommendations, "
+            "most urgent first. Each is ONE plain sentence of at most 25 words that names the action, "
+            "the machine(s) (at most 2, names exactly as given) and the reason from the data.\n"
+            "Pick actions from this list, matching each machine's status:\n"
+            "- queue: run fair allocation on it, or send waiting teams to a similar machine from the data\n"
+            "- busy: add evening or weekend slots, or a second unit\n"
+            "- idle: promote it to students in named OTHER departments who could use it\n"
+            "- steady: no action needed, so skip it\n"
+            f"Departments: {', '.join(departments)}.\n"
+            "Do NOT start with Monitor, Review, Inspect, Check, Track, Observe or Consider, and do not just "
+            "restate the numbers. Quote a number only if it is in the data, with its unit "
             "(percent booked, hours coming up, teams waiting). Never invent numbers or use ids.\n"
+            "Example: Run fair allocation on the Ultimaker S5 3D Printer, where 4 teams are waiting.\n"
             + json.dumps(cleaned_stats)
         )
         data = self._generate_json(prompt, schema)
@@ -437,7 +447,7 @@ class LabAssistant:
                 tip = str(raw).strip()
                 for eq_id, eq_name in id_to_name.items():
                     tip = tip.replace(eq_id, eq_name)
-                if "eq_" in tip or len(tip) > 220 or not tip:
+                if not tip or "eq_" in tip or len(tip) > 220 or tip.split()[0].lower().strip(",:") in WEAK_VERBS:
                     continue
                 processed.append(tip)
                 if len(processed) == 3:
@@ -538,6 +548,20 @@ def _template_explanation(d: AllocationDecision, rank: int, catalogue: dict[str,
     if d.start:
         return f"{why} No capacity before your deadline; the earliest slot is {d.start:%a %d %b, %H:%M}. Please talk to your guide."
     return f"{why} No capacity in the next three weeks; please talk to your guide or the lab coordinator."
+
+
+WEAK_VERBS = {"monitor", "review", "inspect", "check", "track", "observe", "consider", "keep", "watch"}
+
+
+def _usage_status(s: dict[str, Any]) -> str:
+    """Deterministic label that tells Gemini which kind of action fits a machine."""
+    if s.get("waitlisted", 0):
+        return "queue"
+    if s.get("utilisation", 0) >= 60:
+        return "busy"
+    if s.get("utilisation", 0) < 5:
+        return "idle"
+    return "steady"
 
 
 def _rule_insights(stats: list[dict[str, Any]]) -> list[str]:

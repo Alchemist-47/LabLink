@@ -118,6 +118,7 @@ backend design and the test suite.
 - Post-session feedback → equipment health flag
 
 ## 8. Work log (newest first, one line per handoff)
+- 2026-11-23 · Claude · #22 follow-up: usage tips were accurate but vague ("Monitor…", "Review…"). Prompt now gives each machine a status (queue/busy/idle/steady) and an action list; tips starting with weak verbs are dropped. lablink/ai.py + tests/test_ai.py. 222 tests, ruff/mypy clean.
 - 2026-11-23 · Antigravity · #22 done (lablink/ai.py, lablink/templates/insights.html, tests/test_ai.py). Sanitized utilisation insights prompt & post-processing, fixed rule insights formatting, updated source hint in insights.html. 220 tests passing, ruff and mypy clean. No commit made per instructions.
 - 2026-11-23 · Claude · #20 calendar export + #21 mypy & a11y tests done. 216 tests, 96% coverage, ruff/mypy/pip-audit clean. README updated. **Ashish/Antigravity: add `- run: mypy` to tests.yml after ruff, then commit & push.**
 - 2026-11-23 · Claude · #19 done. Users have `trainings`, equipment has `requires_approval` (seed: printers, laser, GPU, UV-Vis, PCR). Booking a gated machine on a pending request is now a clear "blocked" result, not an error. Also touched `templates/base.html` (hours meter) and new `templates/plan.html`. Antigravity's #20 files untouched.

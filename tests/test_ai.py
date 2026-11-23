@@ -347,3 +347,34 @@ def test_timeout_respects_gemini_minimum_deadline():
     assert TIMEOUT_MS >= MIN_SERVER_DEADLINE_MS
     assistant = LabAssistant.from_env("dummy-key", None, "global", "m")
     assert assistant._client._api_client._http_options.timeout >= MIN_SERVER_DEADLINE_MS
+
+
+def test_utilisation_prompt_gives_actions_and_statuses():
+    client = FakeClient(payload={"insights": ["Run fair allocation on Printer, where 4 teams are waiting."]})
+    stats = [
+        {"id": "eq_a", "name": "Printer", "department": "Mechanical", "utilisation": 18, "waitlisted": 4},
+        {"id": "eq_b", "name": "PCR", "department": "Biotechnology", "utilisation": 0, "waitlisted": 0},
+        {"id": "eq_c", "name": "GPU", "department": "Computer Science", "utilisation": 75, "waitlisted": 0},
+        {"id": "eq_d", "name": "Scope", "department": "Electronics", "utilisation": 30, "waitlisted": 0},
+    ]
+    tips, used_ai = LabAssistant(client).utilisation_insights(stats)
+    prompt = client.models.prompts[-1]
+    assert used_ai and tips == ["Run fair allocation on Printer, where 4 teams are waiting."]
+    for status in ('"status": "queue"', '"status": "idle"', '"status": "busy"', '"status": "steady"'):
+        assert status in prompt
+    assert "run fair allocation" in prompt and "Departments: Biotechnology, Computer Science" in prompt
+
+
+def test_utilisation_drops_tips_that_only_restate_data():
+    stats = [{"id": "eq_a", "name": "Printer", "utilisation": 18, "waitlisted": 4}]
+    client = FakeClient(payload={"insights": [
+        "Monitor the Printer which has 4 teams waiting.",
+        "Review: Printer is 18 percent booked.",
+        "Run fair allocation on Printer, where 4 teams are waiting.",
+    ]})
+    tips, used_ai = LabAssistant(client).utilisation_insights(stats)
+    assert used_ai and tips == ["Run fair allocation on Printer, where 4 teams are waiting."]
+
+    only_weak = FakeClient(payload={"insights": ["Check the Printer.", "Inspect the Printer."]})
+    tips, used_ai = LabAssistant(only_weak).utilisation_insights(stats)
+    assert not used_ai and any("Printer" in t for t in tips)
