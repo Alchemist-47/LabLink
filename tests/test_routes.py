@@ -159,3 +159,55 @@ def test_concurrent_booking_clash_returns_409(client, service):
     html = r2.get_data(as_text=True)
     assert "Schedule clash" in html
     assert "Join the waitlist instead" not in html
+
+
+def _app_with(repo, client):
+    from conftest import NOW
+
+    from lablink import create_app
+    from lablink.ai import LabAssistant
+
+    app = create_app(repo=repo, assistant=LabAssistant(client), clock=lambda: NOW,
+                     config={"TESTING": True, "SECRET_KEY": "t", "AI_RATE_LIMIT": 1000})
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["_csrf"] = "tok"
+    return c
+
+
+DESAL = {"project_kind": "physical", "items": [
+    {"id": "eq_fdm_printer", "tier": "needed", "evidence": "desalination prototype", "task": "fabricate the housing",
+     "reason": "Print the prototype housing.", "hours": 6},
+    {"id": "eq_uvvis", "tier": "consider", "evidence": "", "task": "test output water for contaminants",
+     "reason": "Desalinated water should be tested for contaminants.", "hours": 3},
+]}
+
+
+def test_discover_groups_inferred_matches_separately(repo):
+    from test_ai import FakeClient
+
+    c = _app_with(repo, FakeClient(payload=DESAL))
+    page = c.get("/?q=build+a+desalination+prototype").get_data(as_text=True)
+    assert "Matched by Gemini" in page and "Also likely useful" in page
+    assert page.index("Ultimaker") < page.index("Also likely useful") < page.index("UV-Vis Spectrophotometer")
+
+
+def test_request_form_ticks_needed_but_not_consider(repo):
+    from test_ai import FakeClient
+
+    c = _app_with(repo, FakeClient(payload=DESAL))
+    login(c, "s_rahul")
+    page = post(c, "/requests/suggest", {"description": "We will build a desalination prototype for a village"}).get_data(as_text=True)
+    assert 'value="eq_fdm_printer" checked' in page
+    assert 'value="eq_uvvis" checked' not in page and "Worth considering:" in page
+
+
+def test_ai_failure_is_shown_honestly(repo):
+    from test_ai import FakeClient
+
+    c = _app_with(repo, FakeClient(fail=True))
+    login(c, "s_rahul")
+    page = post(c, "/requests/suggest", {"description": "We will build a desalination prototype for a village"}).get_data(as_text=True)
+    assert "AI suggestions are unavailable right now" in page or "keyword matches" in page
+    search = c.get("/?q=train+an+image+classifier").get_data(as_text=True)
+    assert "Gemini didn&#39;t respond in time" in search or "Gemini didn't respond in time" in search

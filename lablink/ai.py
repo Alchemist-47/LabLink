@@ -30,21 +30,30 @@ SYSTEM_INSTRUCTION = (
     "Be concise, factual and neutral."
 )
 RELEVANCE_RULES = (
-    "Relevance rules (strict):\n"
-    "1. Recommend a machine only if the student's text describes a concrete PHYSICAL or "
-    "compute-heavy task that needs it: fabricating parts, probing or measuring signals, "
-    "programming hardware, testing biological or chemical samples, or training neural networks.\n"
-    "2. Pure software (web or mobile apps, databases, compilers, APIs, chatbots that call hosted "
-    "models, ordinary data analysis or dashboards) needs only a laptop: return an empty list.\n"
-    "3. Never infer a need from generic words such as analysis, data, design, system, testing, "
-    "model or development, or from the student's department.\n"
-    "4. Cross-department equipment is welcome only when the text clearly describes that "
-    "department's kind of work (e.g. sample chemistry, PCB assembly, 3D printing).\n"
-    "5. For each item, copy into `evidence` the exact words from the student's text that "
-    "require it. If you cannot quote such words, leave the item out.\n"
-    "6. An empty list is a correct and good answer."
+    "How to choose equipment:\n"
+    "- First classify the work as project_kind: `software_only` (web or mobile apps, databases, "
+    "compilers, APIs, chatbots on hosted models, ordinary data analysis or dashboards; a laptop is "
+    "enough), `physical` (builds, measures or tests real things) or `mixed`.\n"
+    "- tier `needed`: the student's words explicitly describe the lab task. Copy those exact words "
+    "into `evidence`.\n"
+    "- tier `consider`: the words don't say it, but projects of this kind normally require the task "
+    "(e.g. a desalination prototype needs its output water tested; a drone frame needs fabricating). "
+    "State that task plainly in `task`. Use real domain knowledge, not loose associations.\n"
+    "- Never infer a need from generic words (analysis, data, design, system, testing, model, "
+    "development) or from the student's department.\n"
+    "- Cross-department equipment is welcome whenever the task genuinely needs it.\n"
+    "- Leave a machine out if neither tier honestly applies. Return an empty list only when the "
+    "work is software_only or nothing in the catalogue relates."
 )
 MAX_INPUT_CHARS = 1500
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
+TIMEOUT_MS = 8_000  # fail fast; the page falls back instead of hanging
+# Result sources shown in the UI
+GEMINI = "gemini"      # Gemini answered
+KEYWORD = "keyword"    # Gemini not configured: keyword matching by design
+FALLBACK = "fallback"  # Gemini configured but failed or timed out
+TIER_NEEDED = "needed"
+TIER_CONSIDER = "consider"
 CACHE_SIZE = 128
 STOPWORDS = frozenset(
     "a an and are as at be by can do for from have i in is it me my need needs of on or our "
@@ -58,7 +67,6 @@ GENERIC = frozenset(
     "performance quality process new create creating measure measuring".split()
 )
 MIN_TOKEN = 3
-NECESSARY = frozenset({"essential", "useful"})
 
 
 @dataclass(frozen=True)
@@ -66,6 +74,7 @@ class Match:
     equipment_id: str
     reason: str
     hours: int = 0
+    tier: str = TIER_NEEDED
 
 
 def _stem(word: str) -> str:
@@ -144,11 +153,12 @@ def _clean(text: str) -> str:
 
 
 class LabAssistant:
-    def __init__(self, client: Any | None = None, model: str = "gemini-flash-latest") -> None:
+    def __init__(self, client: Any | None = None, model: str = DEFAULT_MODEL) -> None:
         self._client = client
         self._model = model
         self._cache: OrderedDict[str, Any] = OrderedDict()
         self._lock = threading.Lock()
+        self._send_thinking_config = True  # turned off if the model rejects it
 
     @classmethod
     def from_env(cls, api_key: str | None, project: str | None, location: str, model: str) -> LabAssistant:
@@ -160,7 +170,7 @@ class LabAssistant:
             from google import genai
             from google.genai import types
 
-            http = types.HttpOptions(timeout=20_000)
+            http = types.HttpOptions(timeout=TIMEOUT_MS)
             if api_key:
                 client = genai.Client(api_key=api_key, http_options=http)
             else:
@@ -175,7 +185,23 @@ class LabAssistant:
         return self._client is not None
 
     # Low-level call --------------------------------------------------------
+    def _config(self, schema: dict[str, Any]):
+        from google.genai import types
+
+        thinking = (
+            types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL) if self._send_thinking_config else None
+        )
+        return types.GenerateContentConfig(
+            system_instruction=SYSTEM_INSTRUCTION,
+            response_mime_type="application/json",
+            response_json_schema=schema,
+            temperature=0.1,
+            max_output_tokens=2048,
+            thinking_config=thinking,
+        )
+
     def _generate_json(self, prompt: str, schema: dict[str, Any]) -> Any | None:
+        """One Gemini call returning parsed JSON, or None on any failure (caller falls back)."""
         if not self._client:
             return None
         cache_key = json.dumps([prompt, schema], sort_keys=True)
@@ -184,22 +210,21 @@ class LabAssistant:
                 self._cache.move_to_end(cache_key)
                 return self._cache[cache_key]
         try:
-            from google.genai import types
-
-            response = self._client.models.generate_content(
-                model=self._model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
-                    response_mime_type="application/json",
-                    response_json_schema=schema,
-                    temperature=0.1,
-                    max_output_tokens=2048,
-                ),
-            )
+            try:
+                response = self._client.models.generate_content(
+                    model=self._model, contents=prompt, config=self._config(schema)
+                )
+            except Exception as exc:
+                # Some models don't accept a thinking level: retry once without it, then stop sending it.
+                if not (self._send_thinking_config and "thinking" in str(exc).lower()):
+                    raise
+                self._send_thinking_config = False
+                response = self._client.models.generate_content(
+                    model=self._model, contents=prompt, config=self._config(schema)
+                )
             result = json.loads(response.text)
-        except Exception:
-            log.warning("Gemini call failed; using fallback", exc_info=True)
+        except Exception as exc:
+            log.warning("Gemini call failed (%s); using fallback", type(exc).__name__, exc_info=True)
             return None
         with self._lock:
             self._cache[cache_key] = result
@@ -207,39 +232,43 @@ class LabAssistant:
                 self._cache.popitem(last=False)
         return result
 
+    def _source(self, used_gemini: bool) -> str:
+        """How a result was produced, so the UI can say so honestly."""
+        if used_gemini:
+            return GEMINI
+        return FALLBACK if self.enabled else KEYWORD
+
     # Features ----------------------------------------------------------------
-    def search(self, query: str, catalogue: list[Equipment]) -> tuple[list[Match], bool]:
-        """Return (matches, used_ai). Gemini results must be grounded in the query."""
-        schema = _grounded_schema("matches", with_hours=False)
+    def search(self, query: str, catalogue: list[Equipment]) -> tuple[list[Match], str]:
+        """Discovery search. Returns (matches, source); matches carry a tier."""
         prompt = (
             "Catalogue (JSON):\n" + _catalogue_json(catalogue) + "\n\n"
-            "A student describes a task they need to do. Return up to 5 catalogue items that "
-            "directly perform that task, best first, each with a one-sentence reason addressed "
-            "to the student.\n" + RELEVANCE_RULES + "\n"
+            "A student describes what they want to do. Return up to 6 catalogue items that would "
+            "help, best first, each with a one-sentence reason addressed to the student.\n"
+            + RELEVANCE_RULES + "\n"
             f"<user_input>{_clean(query)}</user_input>"
         )
-        data = self._generate_json(prompt, schema)
+        data = self._generate_json(prompt, _schema(with_hours=False))
         if isinstance(data, dict):
-            return _accept(data.get("matches"), query, catalogue, limit=5, with_hours=False), True
-        return keyword_search(query, catalogue), False
+            return _accept(data, query, catalogue, limit=6, with_hours=False), GEMINI
+        return keyword_search(query, catalogue), self._source(False)
 
     def suggest_needs(
         self, description: str, catalogue: list[Equipment], department: str = ""
-    ) -> tuple[list[Match], bool]:
-        """Suggest equipment for a project. An empty list means 'a laptop is enough'."""
-        schema = _grounded_schema("needs", with_hours=True)
+    ) -> tuple[list[Match], str]:
+        """Suggest equipment for a project. Returns (matches, source); empty = a laptop is enough."""
         prompt = (
             "Catalogue (JSON):\n" + _catalogue_json(catalogue) + "\n\n"
-            "Choose the equipment this project needs (at most 4 items) and estimate realistic "
-            "total hours for each (1-40). Mark each as essential, useful or not_needed.\n"
-            + RELEVANCE_RULES + "\n"
-            f"Student's department (context only, not a reason to recommend): {department or 'unknown'}\n"
+            "Choose the equipment this student project needs, at most 6 items, and estimate "
+            "realistic total hours for each (1-40).\n" + RELEVANCE_RULES + "\n"
+            f"Student's department (context only, never a reason on its own): {department or 'unknown'}\n"
             f"<user_input>{_clean(description)}</user_input>"
         )
-        data = self._generate_json(prompt, schema)
+        data = self._generate_json(prompt, _schema(with_hours=True))
         if isinstance(data, dict):
-            return _accept(data.get("needs"), description, catalogue, limit=4, with_hours=True), True
-        return [Match(m.equipment_id, m.reason, 4) for m in keyword_search(description, catalogue, 3)], False
+            return _accept(data, description, catalogue, limit=6, with_hours=True), GEMINI
+        matches = [Match(m.equipment_id, m.reason, 4) for m in keyword_search(description, catalogue, 3)]
+        return matches, self._source(False)
 
     def summarise_request(
         self, request: AccessRequest, student: User, catalogue: dict[str, Equipment], used_hours: int, days_left: int
@@ -390,40 +419,60 @@ class LabAssistant:
         return _rule_insights(stats), False
 
 
-def _grounded_schema(key: str, with_hours: bool) -> dict[str, Any]:
-    item = {
+def _schema(with_hours: bool) -> dict[str, Any]:
+    item: dict[str, Any] = {
         "id": {"type": "string"},
-        "necessity": {"type": "string", "enum": ["essential", "useful", "not_needed"]},
-        "evidence": {"type": "string", "description": "Exact words from the student's text that require this item"},
-        "reason": {"type": "string"},
+        "tier": {"type": "string", "enum": [TIER_NEEDED, TIER_CONSIDER]},
+        "evidence": {"type": "string", "description": "For tier needed: exact words from the student's text"},
+        "task": {"type": "string", "description": "The lab task this machine does for the project"},
+        "reason": {"type": "string", "description": "One sentence to the student"},
     }
     if with_hours:
         item["hours"] = {"type": "integer"}
     return {
         "type": "object",
-        "properties": {key: {"type": "array", "items": {"type": "object", "properties": item, "required": list(item)}}},
-        "required": [key],
+        "properties": {
+            "project_kind": {"type": "string", "enum": ["software_only", "physical", "mixed"]},
+            "items": {"type": "array", "items": {"type": "object", "properties": item, "required": list(item)}},
+        },
+        "required": ["project_kind", "items"],
     }
 
 
-def _accept(items: Any, source: str, catalogue: list[Equipment], limit: int, with_hours: bool) -> list[Match]:
-    """Keep only Gemini items that are real catalogue IDs, marked essential/useful, and whose
-    quoted evidence actually appears in the student's own text. Drops hallucinated links."""
+def _accept(data: dict[str, Any], source: str, catalogue: list[Equipment], limit: int, with_hours: bool) -> list[Match]:
+    """Code-side checks on Gemini's answer (the model proposes, this function decides):
+    * software_only work gets nothing, whatever items came back;
+    * IDs must exist in the catalogue;
+    * `needed` items must quote words that really appear in the student's text, otherwise
+      they are demoted to `consider`;
+    * every item must name a concrete task, not just generic words.
+    Needed items are listed before consider items."""
+    if data.get("project_kind") == "software_only":
+        return []
     valid = {e.id for e in catalogue}
-    out: list[Match] = []
+    needed: list[Match] = []
+    consider: list[Match] = []
+    items = data.get("items")
     for item in items if isinstance(items, list) else []:
         if not isinstance(item, dict) or item.get("id") not in valid:
             continue
-        if item.get("necessity") not in NECESSARY or not grounded(str(item.get("evidence", "")), source):
+        task = str(item.get("task", ""))
+        if not _signal_tokens(task):
             continue
+        tier = item.get("tier")
+        if tier not in (TIER_NEEDED, TIER_CONSIDER):
+            continue
+        if tier == TIER_NEEDED and not grounded(str(item.get("evidence", "")), source):
+            tier = TIER_CONSIDER
         hours = 0
         if with_hours:
             try:
                 hours = max(1, min(40, int(item.get("hours", 4))))
             except (TypeError, ValueError):
                 hours = 4
-        out.append(Match(item["id"], str(item.get("reason", ""))[:300], hours))
-    return _dedupe(out)[:limit]
+        reason = str(item.get("reason") or task)[:300]
+        (needed if tier == TIER_NEEDED else consider).append(Match(item["id"], reason, hours, tier))
+    return _dedupe(needed + consider)[:limit]
 
 
 def _dedupe(matches: list[Match]) -> list[Match]:

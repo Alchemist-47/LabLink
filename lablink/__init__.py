@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from flask import Flask, render_template
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from .ai import LabAssistant
+from .ai import DEFAULT_MODEL, LabAssistant
 from .repository import MemoryRepository, Repository
 from .security import RateLimiter, init_security
 from .seed import seed_if_empty
@@ -78,7 +78,7 @@ def create_app(
         api_key=os.environ.get("GEMINI_API_KEY"),
         project=os.environ.get("GOOGLE_CLOUD_PROJECT") if os.environ.get("GEMINI_USE_VERTEX") == "1" else None,
         location=os.environ.get("GOOGLE_CLOUD_LOCATION", "global"),
-        model=os.environ.get("GEMINI_MODEL", "gemini-flash-latest"),
+        model=os.environ.get("GEMINI_MODEL", DEFAULT_MODEL),
     )
     if seed_if_empty(repo, clock()):
         log.info("Seeded demo campus data")

@@ -1,5 +1,19 @@
 {% extends "base.html" %}
 {% from "_macros.html" import dept, risk, source %}
+{% macro card(eq, reason, free, tier) %}
+    <li class="tag {{ dept(eq.department) }}">
+      <div class="tag-band">
+        <span class="free {{ 'free-none' if not free }}">{{ free }}/{{ eq.units }}<small>free now</small></span>
+        <span class="where-chip">{{ eq.department }}<br><span class="muted">{{ eq.lab }}</span></span>
+      </div>
+      <h3><a href="{{ url_for('main.equipment_detail', equipment_id=eq.id) }}">{{ eq.name }}</a></h3>
+      {% if reason %}<p class="why">{{ reason }}</p>{% else %}<p>{{ eq.description }}</p>{% endif %}
+      <div class="tag-foot">
+        {{ risk(eq.risk_level) }}
+        {% if eq.requires_training %}<span class="training">Training required</span>{% endif %}
+      </div>
+    </li>
+{% endmacro %}
 {% block title %}Find equipment{% endblock %}
 {% block content %}
 <h1 class="visually-hidden">Find lab equipment across campus</h1>
@@ -47,26 +61,22 @@
     <h2 id="results-heading">
       {% if query %}{{ results|length }} match{{ '' if results|length == 1 else 'es' }} for “{{ query }}”{% else %}{{ results|length }} items you can book{% endif %}
     </h2>
-    {% if query %}{{ source(used_ai) }}{% endif %}
+    {% if query %}{{ source(result_source) }}{% endif %}
   </div>
   {% if not results %}
   <p>Nothing matched. Describe what you want to measure, make or test, or clear the filters.</p>
   {% endif %}
+  {% set direct = results|rejectattr(3, 'equalto', 'consider')|list %}
+  {% set likely = results|selectattr(3, 'equalto', 'consider')|list %}
   <ul class="tags" role="list">
-    {% for eq, reason, free in results %}
-    <li class="tag {{ dept(eq.department) }}">
-      <div class="tag-band">
-        <span class="free {{ 'free-none' if not free }}">{{ free }}/{{ eq.units }}<small>free now</small></span>
-        <span class="where-chip">{{ eq.department }}<br><span class="muted">{{ eq.lab }}</span></span>
-      </div>
-      <h3><a href="{{ url_for('main.equipment_detail', equipment_id=eq.id) }}">{{ eq.name }}</a></h3>
-      {% if reason %}<p class="why">{{ reason }}</p>{% else %}<p>{{ eq.description }}</p>{% endif %}
-      <div class="tag-foot">
-        {{ risk(eq.risk_level) }}
-        {% if eq.requires_training %}<span class="training">Training required</span>{% endif %}
-      </div>
-    </li>
-    {% endfor %}
+    {% for eq, reason, free, tier in direct %}{{ card(eq, reason, free, tier) }}{% endfor %}
   </ul>
+  {% if likely %}
+  <h3 class="tier-heading">Also likely useful</h3>
+  <p class="muted">Not in your words, but tasks like this usually need them. Check the reason on each.</p>
+  <ul class="tags" role="list">
+    {% for eq, reason, free, tier in likely %}{{ card(eq, reason, free, tier) }}{% endfor %}
+  </ul>
+  {% endif %}
 </section>
 {% endblock %}

@@ -114,7 +114,7 @@ def discover():
     catalogue = svc().repo.list_equipment()
     if query and not ai_allowed():
         abort(429, description="Too many AI searches. Wait a minute and try again.")
-    results, used_ai = svc().search(query, department, category)
+    results, source = svc().search(query, department, category)
     return render_template(
         "discover.html",
         query=query,
@@ -122,8 +122,8 @@ def discover():
         category=category,
         departments=sorted({e.department for e in catalogue}),
         categories=sorted({e.category for e in catalogue}),
-        results=[(eq, reason, svc().free_now(eq)) for eq, reason in results],
-        used_ai=used_ai,
+        results=[(eq, reason, svc().free_now(eq), tier) for eq, reason, tier in results],
+        result_source=source,
     )
 
 
@@ -193,7 +193,7 @@ def _request_page(**extra):
         today=svc().now().date(),
         draft={},
         suggestions={},
-        suggested_ai=False,
+        suggested_source="",
         suggest_ran=False,
     )
     context.update(extra)
@@ -215,9 +215,9 @@ def suggest_equipment():
         return _request_page(draft=draft), 400
     if not ai_allowed():
         abort(429, description="Too many AI requests. Wait a minute and try again.")
-    suggestions, used_ai = svc().suggest_needs(description, current_user())
+    suggestions, source = svc().suggest_needs(description, current_user())
     return _request_page(
-        draft=draft, suggestions={m.equipment_id: m for m in suggestions}, suggested_ai=used_ai, suggest_ran=True
+        draft=draft, suggestions={m.equipment_id: m for m in suggestions}, suggested_source=source, suggest_ran=True
     )
 
 

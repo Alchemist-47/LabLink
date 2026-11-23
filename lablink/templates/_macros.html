@@ -7,7 +7,7 @@
 {% macro status(value) -%}
 {% set v = value.value if value.value is defined else value %}<span class="status status-{{ v }}">{{ v|capitalize }}</span>
 {%- endmacro %}
-{% macro source(used_ai) -%}
-<span class="source">{{ 'Matched by Gemini' if used_ai else 'Keyword match' }}</span>
+{% macro source(src) -%}
+{% if src == True or src == 'gemini' %}<span class="source">Matched by Gemini</span>{% elif src == 'fallback' %}<span class="source" role="note">Gemini didn't respond in time, so these are keyword matches</span>{% else %}<span class="source">Keyword match</span>{% endif %}
 {%- endmacro %}
 {% macro csrf() -%}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{%- endmacro %}

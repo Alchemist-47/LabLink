@@ -42,18 +42,22 @@
 
     <fieldset>
       <legend>Equipment and total hours</legend>
-      {% if suggestions %}<p role="status">Suggestions are ticked below. Change anything that doesn't fit. {{ source(suggested_ai) }}</p>
-      {% elif suggest_ran %}<p role="status"><strong>No lab equipment needed.</strong> From your description this looks like work you can do on your own laptop. If part of it does need a lab, describe that step, for example “print a case for the sensor” or “measure the signal”. {{ source(suggested_ai) }}</p>{% endif %}
+      {% if suggestions %}<p role="status">Equipment marked <strong>Needed</strong> is ticked because your description calls for it. <strong>Worth considering</strong> items are left for you to decide. {{ source(suggested_source) }}</p>
+      {% elif suggest_ran and suggested_source == 'fallback' %}<p role="status"><strong>AI suggestions are unavailable right now.</strong> Tick the equipment you need from the list below, or try again in a minute.</p>
+      {% elif suggest_ran %}<p role="status"><strong>No lab equipment needed.</strong> From your description this looks like work you can do on your own laptop. If part of it does need a lab, describe that step, for example “print a case for the sensor” or “measure the water quality”. {{ source(suggested_source) }}</p>{% endif %}
       <ul class="need-list" role="list">
-        {% for eq in equipment.values()|sort(attribute='name') %}
+        {% set ordered = [] %}
+        {% for m in suggestions.values() %}{% if m.equipment_id in equipment %}{% set _ = ordered.append(equipment[m.equipment_id]) %}{% endif %}{% endfor %}
+        {% for eq in equipment.values()|sort(attribute='name') %}{% if eq.id not in suggestions %}{% set _ = ordered.append(eq) %}{% endif %}{% endfor %}
+        {% for eq in ordered %}
         {% set s = suggestions.get(eq.id) %}
         <li class="need {{ dept(eq.department) }} {% if s %}need-suggested{% endif %}">
-          <input type="checkbox" id="need_{{ eq.id }}" name="equipment_id" value="{{ eq.id }}" {% if s %}checked{% endif %}>
+          <input type="checkbox" id="need_{{ eq.id }}" name="equipment_id" value="{{ eq.id }}" {% if s and s.tier == 'needed' %}checked{% endif %}>
           <label for="need_{{ eq.id }}">{{ eq.name }} <span class="muted">({{ eq.department }})</span></label>
           <label class="visually-hidden" for="hours_{{ eq.id }}">Hours for {{ eq.name }}</label>
           <input type="number" id="hours_{{ eq.id }}" name="hours_{{ eq.id }}" min="1" max="40" value="{{ s.hours if s else 4 }}">
           <span aria-hidden="true">h</span>
-          {% if s %}<p class="why">{{ s.reason }}</p>{% endif %}
+          {% if s %}<p class="why"><strong>{{ 'Needed' if s.tier == 'needed' else 'Worth considering' }}:</strong> {{ s.reason }}</p>{% endif %}
         </li>
         {% endfor %}
       </ul>

@@ -275,3 +275,6 @@ thead th { font-family: var(--display); font-weight: 700; border-bottom: var(--l
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 .plan + form { margin-top: 2rem; }
+
+/* Two-tier AI results */
+.tier-heading { margin: 2.2rem 0 .3rem; }

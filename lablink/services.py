@@ -76,17 +76,20 @@ class LabService:
         return eq
 
     # Discovery -------------------------------------------------------------
-    def search(self, query: str, department: str = "", category: str = "") -> tuple[list[tuple[Equipment, str]], bool]:
+    def search(
+        self, query: str, department: str = "", category: str = ""
+    ) -> tuple[list[tuple[Equipment, str, str]], str]:
+        """Returns ([(equipment, reason, tier)], source)."""
         catalogue = self.repo.list_equipment()
         if department:
             catalogue = [e for e in catalogue if e.department == department]
         if category:
             catalogue = [e for e in catalogue if e.category == category]
         if not query:
-            return [(e, "") for e in catalogue], False
-        matches, used_ai = self.ai.search(query, catalogue)
+            return [(e, "", "") for e in catalogue], ""
+        matches, source = self.ai.search(query, catalogue)
         by_id = {e.id: e for e in catalogue}
-        return [(by_id[m.equipment_id], m.reason) for m in matches if m.equipment_id in by_id], used_ai
+        return [(by_id[m.equipment_id], m.reason, m.tier) for m in matches if m.equipment_id in by_id], source
 
     def free_now(self, equipment: Equipment) -> int:
         now = self.now().replace(minute=0, second=0, microsecond=0)
@@ -101,7 +104,7 @@ class LabService:
         return out
 
     # Project-based access requests -------------------------------------------
-    def suggest_needs(self, description: str, student: User | None = None) -> tuple[list[Match], bool]:
+    def suggest_needs(self, description: str, student: User | None = None) -> tuple[list[Match], str]:
         department = student.department if student else ""
         return self.ai.suggest_needs(description, self.repo.list_equipment(), department)
 
