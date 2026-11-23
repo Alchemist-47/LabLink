@@ -24,12 +24,12 @@
   --radius-sm: 12px;
 
   /* Field-inspired department pastels (card tint) + badge swatches. All pass WCAG AAA with --ink */
-  --cs-bg: #e0f2fe;   --cs: #0284c7;   /* Computer Science: Digital Sky */
-  --ece-bg: #fef3c7;  --ece: #d97706;  /* Electronics: Circuit Amber */
-  --mech-bg: #e0e7ff; --mech: #6366f1; /* Mechanical: Precision Indigo */
-  --bio-bg: #dcfce7;  --bio: #059669;  /* Biotechnology: Living Emerald */
-  --des-bg: #ffe4e6;  --des: #e11d48;  /* Design Studio: Coral Rose */
-  --oth-bg: #f1f5f9;  --oth: #64748b;  /* Central / Other: Precision Slate */
+  --cs-bg: #e0f2fe;   --cs: #38bdf8;   /* Computer Science: Digital Sky */
+  --ece-bg: #fef3c7;  --ece: #f59e0b;  /* Electronics: Circuit Amber */
+  --mech-bg: #e0e7ff; --mech: #818cf8; /* Mechanical: Precision Indigo */
+  --bio-bg: #dcfce7;  --bio: #10b981;  /* Biotechnology: Living Emerald */
+  --des-bg: #ffe4e6;  --des: #fb7185;  /* Design Studio: Coral Rose */
+  --oth-bg: #f1f5f9;  --oth: #94a3b8;  /* Central / Other: Precision Slate */
 
   --ok: #0f7a4d; --warn: #8a5300; --bad: #b42318;
 

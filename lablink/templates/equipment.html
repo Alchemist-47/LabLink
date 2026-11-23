@@ -114,7 +114,7 @@
 
 <section aria-labelledby="avail-heading">
   <div class="section-head"><h2 id="avail-heading">Free units this week</h2><span class="count-pill">{{ eq.units }} unit{{ '' if eq.units == 1 else 's' }}</span></div>
-  <div class="table-scroll" tabindex="0" role="region" aria-labelledby="avail-heading">
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Availability table, scrollable">
   <table class="register">
     <caption>Number of free units each hour, out of {{ eq.units }}. “Full” means nothing is free.</caption>
     <thead><tr><th scope="col">Day</th>{% for h in range(open_hour, close_hour) %}<th scope="col">{{ '%02d'|format(h) }}:00</th>{% endfor %}</tr></thead>

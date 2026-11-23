@@ -85,12 +85,12 @@ backend design and the test suite.
 | # | Task | Lane | Notes |
 |---|---|---|---|
 | 4 | Verify live Gemini with a real key: search, suggest equipment, faculty brief, allocation explanations, checklist | Antigravity | If the model name errors, set `GEMINI_MODEL`; report back in the Work log |
-| 5 | Accessibility audit of the live site (Lighthouse/axe), fix any issues in templates/CSS | Antigravity | Target 100 in Lighthouse Accessibility |
 | 6 | Review the live site against all 6 scoring criteria; fix backend findings | Claude | After task 3 |
 | 7 | Firestore smoke test against the real database (book → conflict → waitlist → allocate → apply) | Claude | After task 3 |
 | 8 | Draft LinkedIn post + platform project description | Antigravity | Explain the problem, FairShare, Gemini's role |
 
 ### Done
+- #15 axe audit clean: 0 violations (WCAG 2.1 AA + best practice) on 9 page/role combos plus suggestions, booking clash and 404 on desktop + mobile. Badge colours one shade lighter (same hues), demo bar is an `<aside>` landmark, unique region label on equipment page (Claude, 2026-11-23)
 - #14 AI suggestions v2: tiers Needed (quoted evidence) / Worth considering (domain inference, unticked); `project_kind=software_only` → nothing; minimal thinking + 8 s timeout + retry without thinking; honest source labels (Gemini / keyword / "Gemini didn't respond"); default model `gemini-3.5-flash-lite`; `scripts/eval_ai.py` checks 8 real cases against live Gemini. 119 tests (Claude, 2026-11-23)
 - #14 Concurrent student booking guardrail: Students cannot book overlapping slots across different equipment. Returns schedule clash error with station name, timing, suppressed waitlist option, and conflict-free slot recommendations. 111 tests pass (Antigravity, 2026-11-23)
 - #13 AI relevance fix: Gemini must quote evidence from the student's text + mark necessity; code drops ungrounded/generic/not_needed items; pure software → "No lab equipment needed". Keyword fallback no longer matches 1–2 letter tokens, generic words, department names or descriptions. 109 tests (Claude, 2026-11-23)
@@ -111,6 +111,7 @@ backend design and the test suite.
 - Post-session feedback → equipment health flag
 
 ## 8. Work log (newest first, one line per handoff)
+- 2026-11-23 · Claude · Final audit: repo rules pass, 7/7 CI green, live site verified with Gemini on all pages, a11y 0 violations (#15, replaces task 5). Open: Cloud Run URL question to organisers, LinkedIn post + description (task 8). Needs commit + push.
 - 2026-11-23 · Claude · Hotfix: Gemini timeout 8 s → 15 s. Gemini rejects server deadlines under 10 s (400 INVALID_ARGUMENT), which made every call fall back. Guard test added. 120 tests.
 - 2026-11-23 · Claude · #14 done. Root causes found: live site never reached Gemini (model `gemini-flash-latest` 404, then 504 timeouts from default thinking), and #13's rules were over-strict. Appended 2 lines to `style.css` (`.tier-heading`). Needs commit + push; then Ashish runs `python scripts/eval_ai.py` with his key.
 - 2026-11-23 · Antigravity · #14 done (services.py, equipment.html, test_services.py, test_routes.py). Enforced practical guardrail blocking concurrent overlapping bookings on different equipment; suggestions filter student clashes; 111 tests pass (96% cov), ruff clean.
