@@ -100,8 +100,9 @@ class LabService:
         return out
 
     # Project-based access requests -------------------------------------------
-    def suggest_needs(self, description: str) -> tuple[list[Match], bool]:
-        return self.ai.suggest_needs(description, self.repo.list_equipment())
+    def suggest_needs(self, description: str, student: User | None = None) -> tuple[list[Match], bool]:
+        department = student.department if student else ""
+        return self.ai.suggest_needs(description, self.repo.list_equipment(), department)
 
     def create_request(self, student: User, form: RequestForm) -> AccessRequest:
         if student.role != Role.STUDENT:

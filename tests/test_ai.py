@@ -1,6 +1,8 @@
 import json
 from datetime import date, datetime
 
+import pytest
+
 from lablink.ai import LabAssistant, keyword_search
 from lablink.models import (
     AccessRequest,
@@ -43,11 +45,11 @@ def test_search_without_gemini_uses_fallback():
 
 def test_search_filters_hallucinated_ids_and_dedupes():
     client = FakeClient(payload={"matches": [
-        {"id": "eq_dso", "reason": "fits"},
-        {"id": "eq_dso", "reason": "dup"},
-        {"id": "eq_not_real", "reason": "made up"},
+        {"id": "eq_dso", "necessity": "essential", "evidence": "signal", "reason": "fits"},
+        {"id": "eq_dso", "necessity": "essential", "evidence": "signal", "reason": "dup"},
+        {"id": "eq_not_real", "necessity": "essential", "evidence": "signal", "reason": "made up"},
     ]})
-    matches, used_ai = LabAssistant(client).search("signal", EQUIPMENT)
+    matches, used_ai = LabAssistant(client).search("probe a signal", EQUIPMENT)
     assert used_ai and [m.equipment_id for m in matches] == ["eq_dso"]
 
 
@@ -65,7 +67,7 @@ def test_gemini_failure_falls_back():
 
 
 def test_responses_are_cached():
-    client = FakeClient(payload={"matches": [{"id": "eq_gpu", "reason": "r"}]})
+    client = FakeClient(payload={"matches": [{"id": "eq_gpu", "necessity": "essential", "evidence": "gpu", "reason": "r"}]})
     assistant = LabAssistant(client)
     assistant.search("gpu", EQUIPMENT)
     assistant.search("gpu", EQUIPMENT)
@@ -73,8 +75,10 @@ def test_responses_are_cached():
 
 
 def test_suggest_needs_clamps_hours():
-    client = FakeClient(payload={"needs": [{"id": "eq_gpu", "hours": 999, "reason": "train"}]})
-    needs, used_ai = LabAssistant(client).suggest_needs("train a model", EQUIPMENT)
+    client = FakeClient(payload={"needs": [
+        {"id": "eq_gpu", "hours": 999, "necessity": "essential", "evidence": "train a neural network", "reason": "train"}
+    ]})
+    needs, used_ai = LabAssistant(client).suggest_needs("We train a neural network on leaf photos", EQUIPMENT)
     assert used_ai and needs[0].hours == 40
 
 
@@ -112,3 +116,86 @@ def test_from_env_builds_client_only_when_configured():
     assert not LabAssistant.from_env(None, None, "global", "m").enabled
     # Constructing the client makes no network call, so a dummy key is safe here.
     assert LabAssistant.from_env("dummy-key", None, "global", "m").enabled
+
+
+# --- Relevance: no misleading suggestions -------------------------------------------
+
+PURE_SOFTWARE = [
+    "Building an LALR(1) compiler in C++ for our compilers course",
+    "A web app for students to track attendance with a PostgreSQL database and data analysis dashboard",
+    "Design and development of a chatbot system for testing customer queries",
+    "REST API in Go with Redis caching and a React front end",
+]
+
+
+@pytest.mark.parametrize("text", PURE_SOFTWARE)
+def test_fallback_suggests_nothing_for_pure_software(text):
+    assert keyword_search(text, EQUIPMENT) == []
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("measure a 50 MHz signal from my FPGA board", "eq_dso"),
+        ("print an enclosure for my sensor", "eq_fdm_printer"),
+        ("check nitrate levels in water samples", "eq_uvvis"),
+        ("train an image classifier", "eq_gpu"),
+        ("solder SMD parts onto my PCB", "eq_solder"),
+        ("amplify DNA for a genetics experiment", "eq_pcr"),
+        ("laser cut an acrylic base for my robot", "eq_laser_cutter"),
+    ],
+)
+def test_fallback_finds_the_right_machine_first(text, expected):
+    assert keyword_search(text, EQUIPMENT)[0].equipment_id == expected
+
+
+def test_generic_words_and_department_names_never_match():
+    assert keyword_search("data analysis design testing system development", EQUIPMENT) == []
+    assert keyword_search("Biotechnology Electronics Mechanical", EQUIPMENT) == []
+
+
+def test_single_words_do_not_trigger_phrase_tags():
+    ids = [m.equipment_id for m in keyword_search("soil moisture sensors that water plants", EQUIPMENT)]
+    assert "eq_uvvis" not in ids and ids[0] == "eq_esp32"
+
+
+def test_gemini_ungrounded_suggestions_are_dropped():
+    """Gemini links a CS web app to a biotech instrument with evidence that isn't in the text."""
+    client = FakeClient(payload={"needs": [
+        {"id": "eq_uvvis", "hours": 4, "necessity": "useful", "evidence": "spectral sample analysis", "reason": "data"},
+        {"id": "eq_pcr", "hours": 2, "necessity": "not_needed", "evidence": "web app", "reason": "none"},
+    ]})
+    needs, used_ai = LabAssistant(client).suggest_needs(PURE_SOFTWARE[1], EQUIPMENT, "Computer Science")
+    assert used_ai and needs == []
+
+
+def test_gemini_generic_evidence_is_not_enough():
+    client = FakeClient(payload={"needs": [
+        {"id": "eq_dso", "hours": 3, "necessity": "essential", "evidence": "data analysis", "reason": "analysis"}
+    ]})
+    needs, _ = LabAssistant(client).suggest_needs(PURE_SOFTWARE[1], EQUIPMENT)
+    assert needs == []
+
+
+def test_gemini_grounded_cross_department_suggestion_is_kept():
+    text = "Our IoT node must be calibrated against lake water samples for nitrate"
+    client = FakeClient(payload={"needs": [
+        {"id": "eq_uvvis", "hours": 4, "necessity": "essential", "evidence": "water samples for nitrate", "reason": "calibration"}
+    ]})
+    needs, _ = LabAssistant(client).suggest_needs(text, EQUIPMENT, "Computer Science")
+    assert [n.equipment_id for n in needs] == ["eq_uvvis"]
+
+
+def test_prompt_carries_relevance_rules_and_department():
+    client = FakeClient(payload={"needs": []})
+    LabAssistant(client).suggest_needs("A compiler", EQUIPMENT, "Computer Science")
+    prompt = client.models.prompts[0]
+    assert "Pure software" in prompt and "laptop" in prompt and "Computer Science" in prompt
+
+
+def test_bad_hours_value_falls_back_to_default():
+    client = FakeClient(payload={"needs": [
+        {"id": "eq_gpu", "hours": "lots", "necessity": "essential", "evidence": "neural network", "reason": "r"}
+    ]})
+    needs, _ = LabAssistant(client).suggest_needs("train a neural network", EQUIPMENT)
+    assert needs[0].hours == 4

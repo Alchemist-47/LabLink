@@ -91,6 +91,7 @@ backend design and the test suite.
 | 8 | Draft LinkedIn post + platform project description | Antigravity | Explain the problem, FairShare, Gemini's role |
 
 ### Done
+- #13 AI relevance fix: Gemini must quote evidence from the student's text + mark necessity; code drops ungrounded/generic/not_needed items; pure software → "No lab equipment needed". Keyword fallback no longer matches 1–2 letter tokens, generic words, department names or descriptions. 109 tests (Claude, 2026-11-23)
 - #11 Visual redesign in Ashish's reference style (butter background, ink outlines, hard shadows, pastel department cards, yellow pill buttons). Fonts: Bricolage Grotesque + Outfit, self-hosted in `static/fonts` (OFL). Demo role switcher moved to a top bar. 90 tests pass (Claude, 2026-11-23)
 - #10 Commit + push Claude's Render changes (`render.yaml`, `lablink/__init__.py`, `lablink/routes.py`, `tests/test_routes.py`, `README.md`, `AGENTS.md`) (Antigravity, 2026-11-23)
 - #2 Create GitHub repo (public), push `main` only (now `https://github.com/Alchemist-47/LabLink.git`; was Alchemist-2905) (Antigravity, 2026-11-23)
@@ -108,6 +109,7 @@ backend design and the test suite.
 - Post-session feedback → equipment health flag
 
 ## 8. Work log (newest first, one line per handoff)
+- 2026-11-23 · Claude · #13 done (ai.py, services.py, routes.py, seed.py tags, requests.html message, tests). Rule for everyone: **any new Gemini feature that recommends equipment must use `_grounded_schema` + `_accept`** so suggestions stay tied to the student's own words. Needs commit + push.
 - 2026-11-23 · Antigravity · Refreshed visual palette in `lablink/static/style.css` and `favicon.svg`: modern sandstone linen canvas (`#f4efe6`), electric coral pill buttons (`#ff6338`), obsidian ink (`#141824`), and field-specific department pastels. 90 tests pass, WCAG AA/AAA verified.
 - 2026-11-23 · Claude · #11 redesign done (templates + static only, no Python changes). Live at https://lablink-oiz3.onrender.com after push. Task 5 (a11y audit) can start once deployed. Keep the design tokens in `style.css` `:root` when editing.
 - 2026-11-23 · Claude · **Repo moved to the submission account: https://github.com/Alchemist-47/LabLink.git** (single branch `main` @ 2d5f867, 46 files, CI workflow included, no secrets). Ashish pushed from Windows after re-auth with `workflow` scope. Old repo Alchemist-2905/LabLink to be deleted/made private. Render must be connected with the Alchemist-47 GitHub account.

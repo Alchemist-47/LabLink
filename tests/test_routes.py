@@ -130,3 +130,11 @@ def test_managed_host_enables_secure_cookies_and_hsts(monkeypatch, repo):
     assert app.config["SESSION_COOKIE_SECURE"] is True
     r = app.test_client().get("/healthz", headers={"X-Forwarded-Proto": "https"})
     assert "Strict-Transport-Security" in r.headers
+
+
+def test_suggest_shows_no_equipment_message_for_software(client):
+    login(client, "s_ananya")
+    r = post(client, "/requests/suggest", {"description": "Building an LALR(1) compiler in C++ for our compilers course"})
+    page = r.get_data(as_text=True)
+    assert r.status_code == 200 and "No lab equipment needed" in page
+    assert 'checked' not in page.split("Equipment and total hours")[1].split("</fieldset>")[0]

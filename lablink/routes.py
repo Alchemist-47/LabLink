@@ -194,6 +194,7 @@ def _request_page(**extra):
         draft={},
         suggestions={},
         suggested_ai=False,
+        suggest_ran=False,
     )
     context.update(extra)
     return render_template("requests.html", **context)
@@ -214,8 +215,10 @@ def suggest_equipment():
         return _request_page(draft=draft), 400
     if not ai_allowed():
         abort(429, description="Too many AI requests. Wait a minute and try again.")
-    suggestions, used_ai = svc().suggest_needs(description)
-    return _request_page(draft=draft, suggestions={m.equipment_id: m for m in suggestions}, suggested_ai=used_ai)
+    suggestions, used_ai = svc().suggest_needs(description, current_user())
+    return _request_page(
+        draft=draft, suggestions={m.equipment_id: m for m in suggestions}, suggested_ai=used_ai, suggest_ran=True
+    )
 
 
 @bp.post("/requests")

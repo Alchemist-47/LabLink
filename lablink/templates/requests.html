@@ -42,7 +42,8 @@
 
     <fieldset>
       <legend>Equipment and total hours</legend>
-      {% if suggestions %}<p>Suggestions are ticked below. Change anything that doesn't fit. {{ source(suggested_ai) }}</p>{% endif %}
+      {% if suggestions %}<p role="status">Suggestions are ticked below. Change anything that doesn't fit. {{ source(suggested_ai) }}</p>
+      {% elif suggest_ran %}<p role="status"><strong>No lab equipment needed.</strong> From your description this looks like work you can do on your own laptop. If part of it does need a lab, describe that step, for example “print a case for the sensor” or “measure the signal”. {{ source(suggested_ai) }}</p>{% endif %}
       <ul class="need-list" role="list">
         {% for eq in equipment.values()|sort(attribute='name') %}
         {% set s = suggestions.get(eq.id) %}

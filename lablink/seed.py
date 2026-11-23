@@ -63,16 +63,16 @@ EQUIPMENT = [
               ("ai", "computer vision", "camera", "robotics", "edge", "deep learning", "drone"), False),
     Equipment("eq_gpu", "RTX 4090 Deep Learning Workstation", "GPU Workstation", "Computer Science", "AI Lab (C-301)", 2,
               "Workstation with 24 GB GPU for training machine-learning models.",
-              ("gpu", "training", "deep learning", "machine learning", "cuda"), False),
+              ("gpu", "training", "deep learning", "machine learning", "neural network", "cuda", "classifier", "image"), False),
     Equipment("eq_esp32", "ESP32 IoT Sensor Kit", "Microcontroller Kit", "Computer Science", "IoT Lab (C-110)", 6,
               "ESP32 boards with soil moisture, temperature, humidity and gas sensors for IoT projects.",
               ("iot", "sensor", "wifi", "microcontroller", "soil", "irrigation", "arduino"), False),
     Equipment("eq_uvvis", "UV-Vis Spectrophotometer", "Spectrometer", "Biotechnology", "Bio-Analytics Lab (B-210)", 1,
               "Measures absorbance from 190–1100 nm for concentration and water-quality analysis.",
-              ("absorbance", "spectroscopy", "water quality", "concentration", "chemistry"), True, RiskLevel.LOW),
+              ("absorbance", "spectroscopy", "water quality", "water samples", "nitrate", "concentration", "chemistry", "spectrophotometer"), True, RiskLevel.LOW),
     Equipment("eq_pcr", "Bio-Rad PCR Thermal Cycler", "PCR Machine", "Biotechnology", "Molecular Lab (B-115)", 1,
               "96-well thermal cycler for DNA amplification.",
-              ("dna", "pcr", "genetics", "amplification", "biology"), True, RiskLevel.MODERATE),
+              ("dna", "pcr", "genetics", "amplify", "amplification", "biology"), True, RiskLevel.MODERATE),
 ]
 
 
