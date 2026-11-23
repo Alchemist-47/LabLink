@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% from "_macros.html" import risk_badge, ai_label, csrf %}
+{% block title %}{{ eq.name }}{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('main.discover') }}">← Back to Discover</a></p>
+<h1>{{ eq.name }}</h1>
+<p class="meta">{{ eq.category }} · {{ eq.department }} · {{ eq.lab }} · {{ eq.units }} unit{{ '' if eq.units == 1 else 's' }}
+  {{ risk_badge(eq.risk_level) }} {% if eq.requires_training %}<span class="badge badge-muted">Training required</span>{% endif %}</p>
+<p>{{ eq.description }}</p>
+
+<div class="two-col">
+<section class="card" aria-labelledby="book-heading">
+  <h2 id="book-heading">Book a slot</h2>
+  {% if me.role != Role.STUDENT %}
+    <p>Switch to a student to book. Faculty manage access from <a href="{{ url_for('main.requests_page') }}">Approvals</a>.</p>
+  {% elif not bookable %}
+    <p>You need an <strong>approved project request</strong> that includes this equipment before you can book it.</p>
+    <p><a class="btn" href="{{ url_for('main.requests_page') }}">Start a project request</a></p>
+  {% else %}
+  {% if result %}
+  <div class="result card-inner" role="alert">
+    <p><strong>{{ result.message }}</strong></p>
+    {% if result.slots %}
+    <p>Free slots{% if result.status == 'unavailable' %} before your deadline{% endif %}:</p>
+    <ul class="slot-list">
+      {% for s in result.slots %}
+      <li>
+        <form method="post" action="{{ url_for('main.book', equipment_id=eq.id) }}">
+          {{ csrf() }}
+          <input type="hidden" name="request_id" value="{{ form.request_id }}">
+          <input type="hidden" name="date" value="{{ s.start.date().isoformat() }}">
+          <input type="hidden" name="start_hour" value="{{ s.start.hour }}">
+          <input type="hidden" name="hours" value="{{ s.hours }}">
+          <button class="btn btn-small btn-secondary" type="submit">Book {{ s.start.strftime('%a %d %b, %H:%M') }}–{{ s.end.strftime('%H:%M') }}</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if result.alternatives %}
+    <p>Equivalent equipment free at that time:</p>
+    <ul>
+      {% for alt, free in result.alternatives %}
+      <li><a href="{{ url_for('main.equipment_detail', equipment_id=alt.id) }}">{{ alt.name }}</a> ({{ alt.department }}, {{ free }} free)</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if result.status == 'unavailable' and form.request_id %}
+    <form method="post" action="{{ url_for('main.book', equipment_id=eq.id) }}">
+      {{ csrf() }}
+      {% for k in ('request_id', 'date', 'start_hour', 'hours') %}<input type="hidden" name="{{ k }}" value="{{ form[k] }}">{% endfor %}
+      <input type="hidden" name="waitlist" value="1">
+      <button class="btn btn-secondary" type="submit">Join the waitlist for fair allocation</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('main.book', equipment_id=eq.id) }}" class="stack">
+    {{ csrf() }}
+    <div class="field">
+      <label for="request_id">For project</label>
+      <select id="request_id" name="request_id" required>
+        {% for r in bookable %}<option value="{{ r.id }}" {% if form.request_id == r.id %}selected{% endif %}>{{ r.project_title }} (due {{ r.deadline.strftime('%d %b') }})</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label for="date">Date</label>
+        <input id="date" name="date" type="date" required min="{{ today.isoformat() }}" value="{{ form.date }}">
+      </div>
+      <div class="field">
+        <label for="start_hour">Start</label>
+        <select id="start_hour" name="start_hour">
+          {% for h in range(open_hour, close_hour) %}<option value="{{ h }}" {% if form.start_hour|string == h|string %}selected{% endif %}>{{ '%02d:00'|format(h) }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="hours">Hours</label>
+        <input id="hours" name="hours" type="number" min="1" max="{{ max_hours }}" required value="{{ form.hours }}">
+      </div>
+    </div>
+    <button class="btn" type="submit">Book</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card" aria-labelledby="checklist-heading">
+  <h2 id="checklist-heading">Safety prep checklist</h2>
+  <p>Get a pre-session checklist tailored to what you plan to do.</p>
+  <form method="post" action="{{ url_for('main.checklist', equipment_id=eq.id) }}" class="stack">
+    {{ csrf() }}
+    <div class="field">
+      <label for="project">What will you use it for?</label>
+      <input id="project" name="project" maxlength="300" value="{{ checklist.project if checklist else '' }}" placeholder="e.g. printing PLA finger joints">
+    </div>
+    <button class="btn btn-secondary" type="submit">Generate checklist</button>
+  </form>
+  {% if checklist %}
+  <div role="status">
+    <p>{{ ai_label(checklist.ai) }}</p>
+    <ol>{% for step in checklist.steps %}<li>{{ step }}</li>{% endfor %}</ol>
+  </div>
+  {% endif %}
+</section>
+</div>
+
+<section aria-labelledby="avail-heading">
+  <h2 id="avail-heading">Availability this week</h2>
+  <div class="table-scroll" tabindex="0" role="region" aria-labelledby="avail-heading">
+  <table class="grid">
+    <caption>Free units per hour, out of {{ eq.units }}. Closed days are marked.</caption>
+    <thead><tr><th scope="col">Day</th>{% for h in range(open_hour, close_hour) %}<th scope="col">{{ '%02d'|format(h) }}:00</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for day, hours in grid %}
+      <tr>
+        <th scope="row">{{ day.strftime('%a %d %b') }}</th>
+        {% if hours %}
+          {% for h, free in hours %}
+          <td class="{{ 'cell-free' if free == eq.units else ('cell-part' if free else 'cell-full') }}">{{ free if free else 'Full' }}</td>
+          {% endfor %}
+        {% else %}
+          <td colspan="{{ close_hour - open_hour }}" class="cell-closed">Closed</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

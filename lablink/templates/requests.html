@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge, ai_label, csrf %}
+{% block title %}{% if me.role == Role.STUDENT %}My projects{% else %}Approvals{% endif %}{% endblock %}
+{% block content %}
+{% if me.role == Role.STUDENT %}
+<h1>My project requests</h1>
+<p class="lead">Describe your project once. LabLink suggests the equipment you need across all departments and sends one request to your faculty guide.</p>
+
+<section class="card" aria-labelledby="new-heading">
+  <h2 id="new-heading">New project request</h2>
+  <form method="post" action="{{ url_for('main.create_request') }}" class="stack">
+    {{ csrf() }}
+    <div class="field">
+      <label for="project_title">Project title</label>
+      <input id="project_title" name="project_title" required minlength="3" maxlength="120" value="{{ draft.project_title or '' }}">
+    </div>
+    <div class="field">
+      <label for="description">What are you building, and what do you need to do in the lab?</label>
+      <textarea id="description" name="description" required minlength="20" maxlength="1500" rows="4">{{ draft.description or '' }}</textarea>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label for="deadline">Deadline</label>
+        <input id="deadline" name="deadline" type="date" required min="{{ today.isoformat() }}" value="{{ draft.deadline or '' }}">
+      </div>
+      <div class="field">
+        <label for="project_type">Project type</label>
+        <select id="project_type" name="project_type" required>
+          {% for t in project_types %}<option value="{{ t.value }}" {% if draft.project_type == t.value %}selected{% endif %}>{{ t.value|title }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="guide_id">Faculty guide</label>
+        <select id="guide_id" name="guide_id" required>
+          {% for f in faculty %}<option value="{{ f.id }}" {% if draft.guide_id == f.id %}selected{% endif %}>{{ f.name }} ({{ f.department }})</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <button class="btn btn-secondary" type="submit" formaction="{{ url_for('main.suggest_equipment') }}" formnovalidate>Suggest equipment with AI</button>
+
+    <fieldset>
+      <legend>Equipment and hours needed</legend>
+      {% if suggestions %}<p>{{ ai_label(suggested_ai) }} Suggestions are pre-selected; adjust as needed.</p>{% endif %}
+      <ul class="need-list" role="list">
+        {% for eq in equipment.values()|sort(attribute='name') %}
+        {% set s = suggestions.get(eq.id) %}
+        <li class="need {% if s %}need-suggested{% endif %}">
+          <input type="checkbox" id="need_{{ eq.id }}" name="equipment_id" value="{{ eq.id }}" {% if s %}checked{% endif %}>
+          <label for="need_{{ eq.id }}">{{ eq.name }} <span class="meta">({{ eq.department }})</span></label>
+          <label class="visually-hidden" for="hours_{{ eq.id }}">Hours for {{ eq.name }}</label>
+          <input class="hours" type="number" id="hours_{{ eq.id }}" name="hours_{{ eq.id }}" min="1" max="40" value="{{ s.hours if s else 4 }}">
+          <span aria-hidden="true">h</span>
+          {% if s %}<p class="reason">{{ s.reason }}</p>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </fieldset>
+    <button class="btn" type="submit">Submit to faculty guide</button>
+  </form>
+</section>
+{% else %}
+<h1>{% if me.role == Role.ADMIN %}All access requests{% else %}Requests awaiting your approval{% endif %}</h1>
+<p class="lead">Each request comes with an AI brief. You make the decision.</p>
+{% endif %}
+
+<section aria-labelledby="list-heading">
+  <h2 id="list-heading">{% if me.role == Role.STUDENT %}Submitted requests{% else %}Requests{% endif %}</h2>
+  {% if not requests %}<p>No requests yet.</p>{% endif %}
+  <ul class="cards" role="list">
+  {% for r in requests %}
+    <li class="card">
+      <h3>{{ r.project_title }} {{ status_badge(r.status) }}</h3>
+      <p class="meta">{{ users[r.student_id].name }} · {{ r.project_type.value|title }} · due {{ r.deadline.strftime('%d %b %Y') }} · guide {{ users[r.guide_id].name }}</p>
+      <p>{{ r.description }}</p>
+      <p><strong>Needs:</strong>
+        {% for n in r.needs %}{{ equipment[n.equipment_id].name if n.equipment_id in equipment else n.equipment_id }} ({{ n.hours }} h){{ ', ' if not loop.last }}{% endfor %}</p>
+      {% if briefs.get(r.id) %}
+      <div class="brief" aria-label="AI brief">
+        <p class="brief-title">AI brief</p>
+        <ul>{% for line in briefs[r.id] %}<li>{{ line }}</li>{% endfor %}</ul>
+      </div>
+      {% endif %}
+      {% if r.decision_note %}<p><strong>Note:</strong> {{ r.decision_note }}</p>{% endif %}
+      {% if r.status.value == 'pending' and (me.role == Role.ADMIN or me.id == r.guide_id) %}
+      <form method="post" action="{{ url_for('main.decide', request_id=r.id) }}" class="decide">
+        {{ csrf() }}
+        <label for="note_{{ r.id }}">Note to student (optional)</label>
+        <input id="note_{{ r.id }}" name="note" maxlength="300">
+        <button class="btn" name="decision" value="approve" type="submit">Approve</button>
+        <button class="btn btn-danger" name="decision" value="reject" type="submit">Reject</button>
+      </form>
+      {% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+</section>
+{% endblock %}

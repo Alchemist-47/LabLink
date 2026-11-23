@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "_macros.html" import ai_label %}
+{% block title %}Utilisation{% endblock %}
+{% block content %}
+<h1>Equipment utilisation</h1>
+<p class="lead">Last 14 days. Find idle equipment to promote and busy equipment that needs more capacity.</p>
+{% if tips %}
+<section class="card" aria-labelledby="tips-heading">
+  <h2 id="tips-heading">Recommendations {{ ai_label(used_ai) }}</h2>
+  <ul>{% for t in tips %}<li>{{ t }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+<div class="table-scroll" tabindex="0" role="region" aria-label="Utilisation table">
+<table>
+  <caption class="visually-hidden">Utilisation by equipment</caption>
+  <thead><tr><th scope="col">Equipment</th><th scope="col">Department</th><th scope="col">Units</th><th scope="col">Utilisation</th><th scope="col">Upcoming hours</th><th scope="col">Waitlist</th></tr></thead>
+  <tbody>
+  {% for s in stats %}
+  <tr>
+    <th scope="row"><a href="{{ url_for('main.equipment_detail', equipment_id=s.id) }}">{{ s.name }}</a></th>
+    <td>{{ s.department }}</td>
+    <td>{{ s.units }}</td>
+    <td><span class="bar" aria-hidden="true"><span class="bar-fill bar-w{{ (s.utilisation // 10) * 10 }}"></span></span> {{ s.utilisation }}%</td>
+    <td>{{ s.upcoming_hours }}</td>
+    <td>{% if s.waitlisted %}<a href="{{ url_for('main.allocate', equipment=s.id) }}">{{ s.waitlisted }} waiting</a>{% else %}0{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

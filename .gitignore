@@ -1,0 +1,45 @@
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# Google Cloud credentials (never commit or upload; Cloud Run uses its service account)
+serviceAccountKey.json
+*service-account*.json
+*serviceAccount*.json
+*credentials*.json
+
+# Python virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test & lint artifacts
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Claude Code & IDE files
+.claude/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store

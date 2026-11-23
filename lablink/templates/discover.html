@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_macros.html" import risk_badge, ai_label %}
+{% block title %}Discover equipment{% endblock %}
+{% block content %}
+<h1>Find lab equipment across campus</h1>
+<p class="lead">Describe what you need to do in plain words. LabLink searches every department's labs, not just yours.</p>
+<form class="search card" method="get" action="{{ url_for('main.discover') }}" role="search">
+  <div class="field grow">
+    <label for="q">What do you need to do?</label>
+    <input id="q" name="q" type="search" value="{{ query }}" maxlength="300"
+           placeholder="e.g. measure a 50 MHz signal from my FPGA board" aria-describedby="q-hint">
+    <p id="q-hint" class="hint">Try “print an enclosure for my sensor”, “train an image model”, or “check nitrate in water”.</p>
+  </div>
+  <div class="field">
+    <label for="department">Department</label>
+    <select id="department" name="department">
+      <option value="">All departments</option>
+      {% for d in departments %}<option {% if d == department %}selected{% endif %}>{{ d }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="category">Type</label>
+    <select id="category" name="category">
+      <option value="">All types</option>
+      {% for c in categories %}<option {% if c == category %}selected{% endif %}>{{ c }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="field end"><button class="btn" type="submit">Search</button></div>
+</form>
+
+<section aria-labelledby="results-heading">
+  <h2 id="results-heading">
+    {% if query %}{{ results|length }} match{{ '' if results|length == 1 else 'es' }} for “{{ query }}” {{ ai_label(used_ai) }}
+    {% else %}All equipment ({{ results|length }}){% endif %}
+  </h2>
+  {% if not results %}
+  <p>No equipment matched. Try describing the task differently, or clear the filters.</p>
+  {% endif %}
+  <ul class="cards" role="list">
+    {% for eq, reason, free in results %}
+    <li class="card equipment-card">
+      <h3><a href="{{ url_for('main.equipment_detail', equipment_id=eq.id) }}">{{ eq.name }}</a></h3>
+      <p class="meta">{{ eq.department }} · {{ eq.lab }} · {{ eq.units }} unit{{ '' if eq.units == 1 else 's' }}</p>
+      {% if reason %}<p class="reason"><strong>Why:</strong> {{ reason }}</p>{% else %}<p>{{ eq.description }}</p>{% endif %}
+      <p class="tags">
+        <span class="badge {{ 'badge-ok' if free else 'badge-busy' }}">{{ free }} free this hour</span>
+        {{ risk_badge(eq.risk_level) }}
+        {% if eq.requires_training %}<span class="badge badge-muted">Training required</span>{% endif %}
+      </p>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

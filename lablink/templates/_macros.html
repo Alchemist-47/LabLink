@@ -1,0 +1,10 @@
+{% macro risk_badge(level) -%}
+<span class="badge badge-risk-{{ level.value }}">{{ level.value|title }} risk</span>
+{%- endmacro %}
+{% macro status_badge(status) -%}
+<span class="badge badge-{{ status.value if status.value is defined else status }}">{{ (status.value if status.value is defined else status)|title }}</span>
+{%- endmacro %}
+{% macro ai_label(used_ai) -%}
+<span class="badge {{ 'badge-ai' if used_ai else 'badge-muted' }}">{{ 'Gemini' if used_ai else 'Keyword match' }}</span>
+{%- endmacro %}
+{% macro csrf() -%}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{%- endmacro %}

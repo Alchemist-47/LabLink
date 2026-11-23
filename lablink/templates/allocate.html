@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Fair allocation{% endblock %}
+{% block content %}
+<h1>Fair allocation</h1>
+<p class="lead">When more teams want a machine than it can serve, LabLink ranks them with a transparent score and finds the earliest slot before each deadline, on the requested machine, an equivalent one in another department, or by proposing a swap with a lower-priority team. Nothing changes until you apply the plan.</p>
+
+<details class="card">
+  <summary>How the priority score works (0–100)</summary>
+  <ul>
+    <li><strong>Urgency (0–40):</strong> closer project deadline scores higher.</li>
+    <li><strong>Project (0–20):</strong> capstone and research above club work, above routine coursework.</li>
+    <li><strong>Fairness (0–25):</strong> fewer lab hours used in the last 30 days scores higher, so nobody hogs a machine.</li>
+    <li><strong>Waiting (0–15):</strong> longer time on the waitlist scores higher.</li>
+  </ul>
+  <p>A swap is only proposed when the other team scores at least 10 points lower, has a later deadline, and can be moved to another slot before its own deadline.</p>
+</details>
+
+{% if not contested %}
+<p>No waitlists right now. Every booking request fits.</p>
+{% else %}
+<nav aria-label="Contested equipment">
+  <ul class="pills" role="list">
+    {% for eq, n in contested %}
+    <li><a href="{{ url_for('main.allocate', equipment=eq.id) }}" {% if selected and eq.id == selected.id %}aria-current="page"{% endif %}>{{ eq.name }} · {{ n }} waiting</a></li>
+    {% endfor %}
+  </ul>
+</nav>
+{% endif %}
+
+{% if selected and decisions %}
+<section aria-labelledby="plan-heading">
+  <h2 id="plan-heading">Proposed plan for {{ selected.name }}</h2>
+  <ol class="plan" role="list">
+    {% for d in decisions %}
+    {% set eq = equipment.get(d.equipment_id) %}
+    <li class="card plan-item outcome-{{ d.outcome }}">
+      <div class="plan-head">
+        <span class="rank" aria-label="Rank {{ loop.index }}">#{{ loop.index }}</span>
+        <h3>{{ users[d.student_id].name }} · {{ d.project_title }}</h3>
+        <span class="badge badge-outcome-{{ d.outcome }}">{{ {'allocated': 'Allocated', 'alternative': 'Equivalent machine', 'swap': 'Swap proposed', 'deferred': 'After deadline'}[d.outcome] }}</span>
+      </div>
+      <p class="score">Score <strong>{{ d.score }}</strong>
+        <span class="meta">= urgency {{ d.score_breakdown.urgency }} + project {{ d.score_breakdown.project }} + fairness {{ d.score_breakdown.fairness }} + waiting {{ d.score_breakdown.waiting }}</span></p>
+      {% if d.start %}
+      <p><strong>Slot:</strong> {{ eq.name }} ({{ eq.department }}), {{ d.start.strftime('%a %d %b, %H:%M') }}–{{ d.end.strftime('%H:%M') }}</p>
+      {% endif %}
+      {% if d.outcome == 'swap' %}
+      <p><strong>Moves:</strong> {{ users[d.swap_user_id].name }}'s booking to {{ equipment[d.swap_equipment_id].name }}, {{ d.swap_start.strftime('%a %d %b, %H:%M') }}–{{ d.swap_end.strftime('%H:%M') }} (still before their deadline).</p>
+      {% endif %}
+      <p class="explanation">{{ d.explanation }}</p>
+    </li>
+    {% endfor %}
+  </ol>
+  <form method="post" action="{{ url_for('main.apply_allocation', equipment_id=selected.id) }}">
+    {{ csrf() }}
+    <button class="btn" type="submit">Apply this plan</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}
