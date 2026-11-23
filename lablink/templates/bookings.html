@@ -1,10 +1,11 @@
 {% extends "base.html" %}
-{% from "_macros.html" import status_badge, csrf %}
+{% from "_macros.html" import dept, status, csrf %}
 {% block title %}Bookings{% endblock %}
 {% block content %}
-<h1>{% if me.role == Role.STUDENT %}My bookings{% else %}All upcoming bookings{% endif %}</h1>
+<div class="center"><h1>{% if me.role == Role.STUDENT %}My bookings{% else %}Upcoming bookings{% endif %}</h1>
+<p class="lead">{{ bookings|length }} upcoming or waitlisted.</p></div>
 {% if not bookings %}
-<p>No upcoming bookings. <a href="{{ url_for('main.discover') }}">Find equipment</a> to get started.</p>
+<p>No upcoming bookings. <a href="{{ url_for('main.discover') }}">Find equipment</a> to book your first slot.</p>
 {% else %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="Bookings">
 <table>
@@ -18,11 +19,11 @@
   {% for b in bookings %}
     {% set eq = equipment.get(b.equipment_id) %}
     <tr>
-      <td>{{ b.start.strftime('%a %d %b, %H:%M') }}–{{ b.end.strftime('%H:%M') }}{% if b.status.value == 'waitlisted' %}<br><span class="meta">requested</span>{% endif %}</td>
-      <td>{% if eq %}<a href="{{ url_for('main.equipment_detail', equipment_id=eq.id) }}">{{ eq.name }}</a><br><span class="meta">{{ eq.lab }}</span>{% endif %}</td>
+      <td>{{ b.start.strftime('%a %d %b') }}<br>{{ b.start.strftime('%H:%M') }}–{{ b.end.strftime('%H:%M') }}{% if b.status.value == 'waitlisted' %}<br><span class="muted">requested time</span>{% endif %}</td>
+      <td>{% if eq %}<span class="{{ dept(eq.department) }}"><span class="dept-swatch" aria-hidden="true"></span></span><a href="{{ url_for('main.equipment_detail', equipment_id=eq.id) }}">{{ eq.name }}</a><br><span class="muted">{{ eq.lab }}</span>{% endif %}</td>
       {% if me.role != Role.STUDENT %}<td>{{ users[b.user_id].name if b.user_id in users else b.user_id }}</td>{% endif %}
-      <td>{{ requests[b.request_id].project_title if b.request_id in requests else '' }}{% if b.note %}<br><span class="meta">{{ b.note }}</span>{% endif %}</td>
-      <td>{{ status_badge(b.status) }}</td>
+      <td>{{ requests[b.request_id].project_title if b.request_id in requests else '' }}{% if b.note %}<br><span class="muted">{{ b.note }}</span>{% endif %}</td>
+      <td>{{ status(b.status) }}</td>
       <td>
         {% if me.role == Role.ADMIN or b.user_id == me.id %}
         <form method="post" action="{{ url_for('main.cancel_booking', booking_id=b.id) }}">

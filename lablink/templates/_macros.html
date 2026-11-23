@@ -1,10 +1,13 @@
-{% macro risk_badge(level) -%}
-<span class="badge badge-risk-{{ level.value }}">{{ level.value|title }} risk</span>
+{% macro dept(name) -%}
+{{ {'Computer Science': 'dept-cs', 'Electronics': 'dept-ece', 'Mechanical': 'dept-mech', 'Biotechnology': 'dept-bio', 'Design': 'dept-des'}.get(name, 'dept-other') }}
 {%- endmacro %}
-{% macro status_badge(status) -%}
-<span class="badge badge-{{ status.value if status.value is defined else status }}">{{ (status.value if status.value is defined else status)|title }}</span>
+{% macro risk(level) -%}
+<span class="risk risk-{{ level.value }}">{{ level.value|capitalize }} risk</span>
 {%- endmacro %}
-{% macro ai_label(used_ai) -%}
-<span class="badge {{ 'badge-ai' if used_ai else 'badge-muted' }}">{{ 'Gemini' if used_ai else 'Keyword match' }}</span>
+{% macro status(value) -%}
+{% set v = value.value if value.value is defined else value %}<span class="status status-{{ v }}">{{ v|capitalize }}</span>
+{%- endmacro %}
+{% macro source(used_ai) -%}
+<span class="source">{{ 'Matched by Gemini' if used_ai else 'Keyword match' }}</span>
 {%- endmacro %}
 {% macro csrf() -%}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{%- endmacro %}

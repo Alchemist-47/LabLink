@@ -91,8 +91,9 @@ backend design and the test suite.
 | 8 | Draft LinkedIn post + platform project description | Antigravity | Explain the problem, FairShare, Gemini's role |
 
 ### Done
+- #11 Visual redesign in Ashish's reference style (butter background, ink outlines, hard shadows, pastel department cards, yellow pill buttons). Fonts: Bricolage Grotesque + Outfit, self-hosted in `static/fonts` (OFL). Demo role switcher moved to a top bar. 90 tests pass (Claude, 2026-11-23)
 - #10 Commit + push Claude's Render changes (`render.yaml`, `lablink/__init__.py`, `lablink/routes.py`, `tests/test_routes.py`, `README.md`, `AGENTS.md`) (Antigravity, 2026-11-23)
-- #2 Create GitHub repo (public), push `main` only (`https://github.com/Alchemist-2905/LabLink.git`) (Antigravity, 2026-11-23)
+- #2 Create GitHub repo (public), push `main` only (now `https://github.com/Alchemist-47/LabLink.git`; was Alchemist-2905) (Antigravity, 2026-11-23)
 - #1 Create `.github/workflows/tests.yml` for CI (Antigravity, 2026-11-23)
 - #9 Storage contract tests: same 21 checks run on memory + Firestore (fake client), incl. 12-thread atomic capacity; Firestore code 0% → 97% covered. Suite now 87 tests, 95% coverage (Claude, 2026-11-23)
 - Problem analysis, architecture, all 6 required features, FairShare with swaps (Claude, 2026-11-23)
@@ -107,6 +108,8 @@ backend design and the test suite.
 - Post-session feedback → equipment health flag
 
 ## 8. Work log (newest first, one line per handoff)
+- 2026-11-23 · Claude · #11 redesign done (templates + static only, no Python changes). Live at https://lablink-oiz3.onrender.com after push. Task 5 (a11y audit) can start once deployed. Keep the design tokens in `style.css` `:root` when editing.
+- 2026-11-23 · Claude · **Repo moved to the submission account: https://github.com/Alchemist-47/LabLink.git** (single branch `main` @ 2d5f867, 46 files, CI workflow included, no secrets). Ashish pushed from Windows after re-auth with `workflow` scope. Old repo Alchemist-2905/LabLink to be deleted/made private. Render must be connected with the Alchemist-47 GitHub account.
 - 2026-11-23 · Antigravity · Task 10 done. Ran ruff & pytest (90 passed, 96% cov), committed and pushed Render blueprint & healthz updates to main. Ready for Ashish to deploy on Render (task 3).
 - 2026-11-23 · Claude · Render support ready: `render.yaml` blueprint (free, Singapore, /healthz), secure cookies + HSTS auto-enabled on Render (`RENDER` env), AI rate limit now per-browser + global cap. 90 tests, 96% coverage, ruff clean. **Antigravity: task 10 (commit + push), then Ashish deploys on Render.** Cloud Run steps kept in README as an alternative.
 - 2026-11-23 · Claude · Hosting changed: no Google Cloud billing, so we deploy to **Render free tier** (Docker, from GitHub). Storage = in-memory demo data (Firestore needs GCP billing setup we're skipping). Claude is preparing the code; Antigravity please pause task 3.

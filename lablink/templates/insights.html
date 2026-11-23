@@ -1,28 +1,32 @@
 {% extends "base.html" %}
-{% from "_macros.html" import ai_label %}
-{% block title %}Utilisation{% endblock %}
+{% from "_macros.html" import dept, source %}
+{% block title %}Usage{% endblock %}
 {% block content %}
-<h1>Equipment utilisation</h1>
-<p class="lead">Last 14 days. Find idle equipment to promote and busy equipment that needs more capacity.</p>
+<div class="center">
+<h1>How the labs are used</h1>
+<p class="lead">The last 14 days. Promote what sits idle, and add capacity where queues form.</p>
+</div>
 {% if tips %}
-<section class="card" aria-labelledby="tips-heading">
-  <h2 id="tips-heading">Recommendations {{ ai_label(used_ai) }}</h2>
-  <ul>{% for t in tips %}<li>{{ t }}</li>{% endfor %}</ul>
+<section class="panel" aria-labelledby="tips-heading">
+  <h2 id="tips-heading">What to do next</h2>
+  <ul class="tips">{% for t in tips %}<li>{{ t }}</li>{% endfor %}</ul>
+  <p class="hint">{{ source(used_ai) }}</p>
 </section>
 {% endif %}
-<div class="table-scroll" tabindex="0" role="region" aria-label="Utilisation table">
+<div class="section-head"><h2 id="table-heading">Every machine</h2><span class="count-pill">{{ stats|length }}</span></div>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="table-heading">
 <table>
-  <caption class="visually-hidden">Utilisation by equipment</caption>
-  <thead><tr><th scope="col">Equipment</th><th scope="col">Department</th><th scope="col">Units</th><th scope="col">Utilisation</th><th scope="col">Upcoming hours</th><th scope="col">Waitlist</th></tr></thead>
+  <caption class="visually-hidden">Usage by equipment</caption>
+  <thead><tr><th scope="col">Equipment</th><th scope="col">Department</th><th scope="col">Units</th><th scope="col">Booked</th><th scope="col">Upcoming hours</th><th scope="col">Waitlist</th></tr></thead>
   <tbody>
   {% for s in stats %}
   <tr>
     <th scope="row"><a href="{{ url_for('main.equipment_detail', equipment_id=s.id) }}">{{ s.name }}</a></th>
-    <td>{{ s.department }}</td>
+    <td><span class="{{ dept(s.department) }}"><span class="dept-swatch" aria-hidden="true"></span></span>{{ s.department }}</td>
     <td>{{ s.units }}</td>
-    <td><span class="bar" aria-hidden="true"><span class="bar-fill bar-w{{ (s.utilisation // 10) * 10 }}"></span></span> {{ s.utilisation }}%</td>
+    <td><svg class="util-bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="util-track" width="100" height="10"/><rect class="util-fill" width="{{ s.utilisation }}" height="10"/><rect class="bar-frame" width="100" height="10" vector-effect="non-scaling-stroke"/></svg>{{ s.utilisation }}%</td>
     <td>{{ s.upcoming_hours }}</td>
-    <td>{% if s.waitlisted %}<a href="{{ url_for('main.allocate', equipment=s.id) }}">{{ s.waitlisted }} waiting</a>{% else %}0{% endif %}</td>
+    <td>{% if s.waitlisted %}<a href="{{ url_for('main.allocate', equipment=s.id) }}">{{ s.waitlisted }} waiting</a>{% else %}None{% endif %}</td>
   </tr>
   {% endfor %}
   </tbody>

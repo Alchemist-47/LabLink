@@ -1,52 +1,70 @@
 {% extends "base.html" %}
-{% from "_macros.html" import risk_badge, ai_label %}
-{% block title %}Discover equipment{% endblock %}
+{% from "_macros.html" import dept, risk, source %}
+{% block title %}Find equipment{% endblock %}
 {% block content %}
-<h1>Find lab equipment across campus</h1>
-<p class="lead">Describe what you need to do in plain words. LabLink searches every department's labs, not just yours.</p>
-<form class="search card" method="get" action="{{ url_for('main.discover') }}" role="search">
-  <div class="field grow">
-    <label for="q">What do you need to do?</label>
-    <input id="q" name="q" type="search" value="{{ query }}" maxlength="300"
-           placeholder="e.g. measure a 50 MHz signal from my FPGA board" aria-describedby="q-hint">
-    <p id="q-hint" class="hint">Try “print an enclosure for my sensor”, “train an image model”, or “check nitrate in water”.</p>
+<h1 class="visually-hidden">Find lab equipment across campus</h1>
+<form class="finder" method="get" action="{{ url_for('main.discover') }}" role="search">
+  <label for="q">What do you need to do in a lab?</label>
+  <p class="lead">Describe the task. LabLink searches equipment in every department, not just yours.</p>
+  {% if department %}<input type="hidden" name="department" value="{{ department }}">{% endif %}
+  {% if category %}<input type="hidden" name="category" value="{{ category }}">{% endif %}
+  <div class="finder-row">
+    <input id="q" name="q" type="search" value="{{ query }}" maxlength="300" aria-describedby="q-hint"
+           placeholder="Describe the task, not the machine">
+    <button class="btn" type="submit">Search all labs</button>
   </div>
+  <p id="q-hint" class="examples">Try:
+    <a href="{{ url_for('main.discover', q='measure a 50 MHz signal from my FPGA board') }}">measure a 50 MHz signal</a>
+    <a href="{{ url_for('main.discover', q='print an enclosure for my sensor') }}">print an enclosure</a>
+    <a href="{{ url_for('main.discover', q='train an image classifier') }}">train an image classifier</a>
+    <a href="{{ url_for('main.discover', q='check nitrate levels in water samples') }}">test water samples</a>
+  </p>
+</form>
+
+<nav aria-label="Filter by department">
+  <ul class="wayfinder">
+    <li><a href="{{ url_for('main.discover', q=query or None, category=category or None) }}" {% if not department %}aria-current="true"{% endif %}>All departments</a></li>
+    {% for d in departments %}
+    <li class="{{ dept(d) }}"><a href="{{ url_for('main.discover', q=query or None, department=d, category=category or None) }}" {% if d == department %}aria-current="true"{% endif %}>{{ d }}</a></li>
+    {% endfor %}
+  </ul>
+</nav>
+<form class="type-filter" method="get" action="{{ url_for('main.discover') }}">
+  {% if query %}<input type="hidden" name="q" value="{{ query }}">{% endif %}
+  {% if department %}<input type="hidden" name="department" value="{{ department }}">{% endif %}
   <div class="field">
-    <label for="department">Department</label>
-    <select id="department" name="department">
-      <option value="">All departments</option>
-      {% for d in departments %}<option {% if d == department %}selected{% endif %}>{{ d }}</option>{% endfor %}
-    </select>
-  </div>
-  <div class="field">
-    <label for="category">Type</label>
+    <label for="category">Equipment type</label>
     <select id="category" name="category">
-      <option value="">All types</option>
+      <option value="">Any type</option>
       {% for c in categories %}<option {% if c == category %}selected{% endif %}>{{ c }}</option>{% endfor %}
     </select>
   </div>
-  <div class="field end"><button class="btn" type="submit">Search</button></div>
+  <button class="btn btn-quiet" type="submit">Apply</button>
 </form>
 
 <section aria-labelledby="results-heading">
-  <h2 id="results-heading">
-    {% if query %}{{ results|length }} match{{ '' if results|length == 1 else 'es' }} for “{{ query }}” {{ ai_label(used_ai) }}
-    {% else %}All equipment ({{ results|length }}){% endif %}
-  </h2>
+  <div class="results-head">
+    <h2 id="results-heading">
+      {% if query %}{{ results|length }} match{{ '' if results|length == 1 else 'es' }} for “{{ query }}”{% else %}{{ results|length }} items you can book{% endif %}
+    </h2>
+    {% if query %}{{ source(used_ai) }}{% endif %}
+  </div>
   {% if not results %}
-  <p>No equipment matched. Try describing the task differently, or clear the filters.</p>
+  <p>Nothing matched. Describe what you want to measure, make or test, or clear the filters.</p>
   {% endif %}
-  <ul class="cards" role="list">
+  <ul class="tags" role="list">
     {% for eq, reason, free in results %}
-    <li class="card equipment-card">
+    <li class="tag {{ dept(eq.department) }}">
+      <div class="tag-band">
+        <span class="free {{ 'free-none' if not free }}">{{ free }}/{{ eq.units }}<small>free now</small></span>
+        <span class="where-chip">{{ eq.department }}<br><span class="muted">{{ eq.lab }}</span></span>
+      </div>
       <h3><a href="{{ url_for('main.equipment_detail', equipment_id=eq.id) }}">{{ eq.name }}</a></h3>
-      <p class="meta">{{ eq.department }} · {{ eq.lab }} · {{ eq.units }} unit{{ '' if eq.units == 1 else 's' }}</p>
-      {% if reason %}<p class="reason"><strong>Why:</strong> {{ reason }}</p>{% else %}<p>{{ eq.description }}</p>{% endif %}
-      <p class="tags">
-        <span class="badge {{ 'badge-ok' if free else 'badge-busy' }}">{{ free }} free this hour</span>
-        {{ risk_badge(eq.risk_level) }}
-        {% if eq.requires_training %}<span class="badge badge-muted">Training required</span>{% endif %}
-      </p>
+      {% if reason %}<p class="why">{{ reason }}</p>{% else %}<p>{{ eq.description }}</p>{% endif %}
+      <div class="tag-foot">
+        {{ risk(eq.risk_level) }}
+        {% if eq.requires_training %}<span class="training">Training required</span>{% endif %}
+      </div>
     </li>
     {% endfor %}
   </ul>

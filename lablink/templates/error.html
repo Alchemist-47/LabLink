@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ error.code if error else 500 }}{% endblock %}
 {% block content %}
-<h1>{% if error %}{{ error.code }} · {{ error.name }}{% else %}Something went wrong{% endif %}</h1>
-<p>{% if error and error.description %}{{ error.description }}{% else %}Please try again in a moment.{% endif %}</p>
-<p><a class="btn" href="{{ url_for('main.discover') }}">Back to Discover</a></p>
+<h1>{% if error %}{{ error.name }}{% else %}Something went wrong{% endif %}</h1>
+<p class="lead">{% if error and error.description %}{{ error.description }}{% else %}The server hit an error. Try again in a moment.{% endif %}</p>
+<p><a class="btn" href="{{ url_for('main.discover') }}">Back to equipment search</a></p>
 {% endblock %}
