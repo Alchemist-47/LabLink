@@ -19,6 +19,8 @@ from .models import (
     Role,
     User,
 )
+from .planner import PlanItem, plan_project
+from .policy import access_problems, check_booking, hours_in_week, slot_problems
 from .repository import Repository, new_id
 from .scheduling import (
     CLOSE_HOUR,
@@ -29,6 +31,7 @@ from .scheduling import (
     spread_slots,
     utilisation,
 )
+from .seed import build_demo_data
 from .validation import BookingForm, RequestForm
 
 
@@ -163,25 +166,41 @@ class LabService:
 
     # Booking ---------------------------------------------------------------
     def bookable_requests(self, student: User, equipment_id: str) -> list[AccessRequest]:
-        return [r for r in self.repo.approved_requests_for(student.id) if r.needs_equipment(equipment_id)]
+        """The student's live (pending or approved) projects that include this equipment.
+        Whether a pending one may book is decided by policy.check_booking."""
+        return [
+            r
+            for r in self.repo.requests_for_student(student.id)
+            if r.needs_equipment(equipment_id) and r.status != RequestStatus.REJECTED
+        ]
+
+    def hours_this_week(self, student: User) -> int:
+        return hours_in_week(self.repo.list_bookings(), student.id, self.now().date())
 
     def book(self, student: User, equipment_id: str, form: BookingForm, join_waitlist: bool) -> BookingResult:
         equipment = self.require_equipment(equipment_id)
         request = self.repo.get_request(form.request_id)
-        if (
-            student.role != Role.STUDENT
-            or request is None
-            or request.student_id != student.id
-            or request.status != RequestStatus.APPROVED
-            or not request.needs_equipment(equipment_id)
-        ):
-            raise PermissionDenied("You need an approved project request that includes this equipment")
+        if student.role != Role.STUDENT:
+            raise PermissionDenied("Only students can book equipment")
+        access = access_problems(student, equipment, request)
+        if access and access[0].code == "ownership":
+            raise PermissionDenied(access[0].message)
         start, end = form.start, form.start + timedelta(hours=form.hours)
         if not is_valid_window(start, end):
             return BookingResult(
                 "unavailable",
                 message=f"Labs are open Monday–Saturday, 09:00–{CLOSE_HOUR}:00. Choose a slot within opening hours.",
                 slots=self._suggest_slots(equipment, form.hours, student_id=student.id),
+            )
+        problems = access + slot_problems(student, request, start, end, self.repo.list_bookings())
+        if problems:
+            return BookingResult(
+                "blocked",
+                message=" ".join(p.message for p in problems),
+                slots=[] if access else self._suggest_slots(
+                    equipment, form.hours, before=request.deadline, student_id=student.id
+                ),
+                can_waitlist=False,
             )
         for b in self.repo.bookings_for_user(student.id):
             if (
@@ -263,6 +282,57 @@ class LabService:
         self.repo.save_booking(booking)
         return booking
 
+    # Plan & book -------------------------------------------------------------
+    def _own_live_request(self, student: User, request_id: str) -> AccessRequest:
+        request = self.repo.get_request(request_id)
+        if request is None:
+            raise NotFound("Request not found")
+        if student.role != Role.STUDENT or request.student_id != student.id:
+            raise PermissionDenied("You can only plan your own projects")
+        if request.status == RequestStatus.REJECTED:
+            raise PermissionDenied("This project request was rejected")
+        return request
+
+    def plan_for(self, student: User, request_id: str) -> tuple[AccessRequest, list[PlanItem]]:
+        request = self._own_live_request(student, request_id)
+        items = plan_project(request, student, self.equipment_map(), self.repo.list_bookings(), self.now())
+        return request, items
+
+    def book_plan(self, student: User, request_id: str) -> tuple[int, int]:
+        """Recompute the plan server-side and book every session. Returns (booked, failed).
+        Each booking re-checks the rules and capacity, so a slot taken in the meantime fails
+        cleanly instead of double-booking."""
+        request, items = self.plan_for(student, request_id)
+        catalogue = self.equipment_map()
+        booked = failed = 0
+        for item in items:
+            for session in item.sessions:
+                equipment = catalogue[session.equipment_id]
+                problems = check_booking(
+                    student, equipment, request, session.start, session.end, self.repo.list_bookings()
+                )
+                # The planner may use an equivalent machine that isn't listed on the request.
+                problems = [p for p in problems if not (p.code == "ownership" and session.equipment_id != item.equipment_id)]
+                clash = any(
+                    b.status == BookingStatus.CONFIRMED and b.overlaps(session.start, session.end)
+                    for b in self.repo.bookings_for_user(student.id)
+                )
+                booking = Booking(
+                    id=new_id("bk"),
+                    equipment_id=session.equipment_id,
+                    user_id=student.id,
+                    request_id=request.id,
+                    start=session.start,
+                    end=session.end,
+                    created_at=self.now(),
+                    note="Booked from project plan",
+                )
+                if not problems and not clash and self.repo.add_booking_if_capacity(booking, equipment.units):
+                    booked += 1
+                else:
+                    failed += 1
+        return booked, failed
+
     # Fair allocation -------------------------------------------------------
     def contested_equipment(self) -> list[tuple[Equipment, int]]:
         catalogue = self.equipment_map()
@@ -332,6 +402,14 @@ class LabService:
             return True
         self.repo.save_booking(original)  # roll back
         return False
+
+    # Demo ------------------------------------------------------------------
+    def reset_demo(self, actor: User) -> None:
+        """Restore the demo campus (fresh dates, live 3D-printer conflict). Coordinator only."""
+        if actor.role != Role.ADMIN:
+            raise PermissionDenied("Only the lab coordinator can reset the demo")
+        self.repo.clear()
+        self.repo.load(*build_demo_data(self.now()))
 
     # Utilisation -----------------------------------------------------------
     def utilisation_stats(self, days: int = 14) -> list[dict]:

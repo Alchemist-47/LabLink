@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_macros.html" import dept, csrf %}
+{% block title %}Plan: {{ project.project_title }}{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('main.requests_page') }}">Back to my projects</a></p>
+<div class="center">
+  <h1>Plan and book</h1>
+  <p class="lead">{{ project.project_title }}, due {{ project.deadline.strftime('%a %d %b') }}. LabLink found the earliest sessions that fit your deadline, safety training, approvals, your other bookings and the {{ weekly_cap }}-hour weekly limit.</p>
+</div>
+
+<div class="section-head">
+  <div>
+    <h2 id="plan-heading">Proposed sessions</h2>
+    <p>Sessions are up to 4 hours. Nothing is booked until you confirm.</p>
+  </div>
+  <span class="count-pill">{{ sessions }} session{{ '' if sessions == 1 else 's' }}</span>
+</div>
+
+<ul class="request-list" role="list" aria-labelledby="plan-heading">
+  {% for item in items %}
+  {% set eq = equipment[item.equipment_id] %}
+  <li class="request {{ dept(eq.department) }}">
+    <div class="request-head">
+      <h3>{{ eq.name }}</h3>
+      <span class="status status-{{ {'ready': 'approved', 'done': 'confirmed', 'partial': 'pending', 'blocked': 'rejected'}[item.status] }}">{{ {'ready': 'Ready to book', 'done': 'Already booked', 'partial': 'Partly planned', 'blocked': 'Can’t book yet'}[item.status] }}</span>
+    </div>
+    <p class="muted">{{ eq.department }}, {{ eq.lab }}. Needs {{ item.hours_needed }} h; {{ item.hours_booked }} h already booked{% if item.sessions %}; {{ item.hours_planned }} h planned below{% endif %}.</p>
+    {% if item.sessions %}
+    <ul class="byline">
+      {% for s in item.sessions %}
+      {% set used = equipment[s.equipment_id] %}
+      <li>{{ s.start.strftime('%a %d %b, %H:%M') }}–{{ s.end.strftime('%H:%M') }}{% if s.equipment_id != item.equipment_id %} on {{ used.name }} ({{ used.department }}){% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if item.note %}<p{% if item.status in ('blocked', 'partial') %} role="note"{% endif %}><strong>{{ 'Why' if item.status in ('blocked', 'partial') else 'Note' }}:</strong> {{ item.note }}</p>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+
+{% if sessions %}
+<form method="post" action="{{ url_for('main.book_plan', request_id=project.id) }}" class="center plan-book">
+  {{ csrf() }}
+  <p><button class="btn" type="submit">Book all {{ sessions }} session{{ '' if sessions == 1 else 's' }}</button></p>
+  <p class="hint">Each session is checked again as it is booked, so nothing is double-booked if someone takes a slot first.</p>
+</form>
+{% else %}
+<p class="center">There is nothing to book right now. Fix the reasons above, or check back after your guide approves the project.</p>
+{% endif %}
+{% endblock %}

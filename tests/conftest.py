@@ -21,7 +21,7 @@ def app(repo):
         repo=repo,
         assistant=LabAssistant(None),
         clock=lambda: NOW,
-        config={"TESTING": True, "SECRET_KEY": "test", "AI_RATE_LIMIT": 1000},
+        config={"TESTING": True, "SECRET_KEY": "test", "AI_RATE_LIMIT": 1000, "WRITE_RATE_LIMIT": 1000},
     )
 
 

@@ -49,6 +49,8 @@ class User:
     name: str
     role: Role
     department: str
+    email: str = ""  # used to match a signed-in identity when DEMO_MODE is off
+    trainings: tuple[str, ...] = ()  # equipment categories this person is safety-trained on
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,7 @@ class Equipment:
     tags: tuple[str, ...] = ()
     requires_training: bool = False
     risk_level: RiskLevel = RiskLevel.LOW
+    requires_approval: bool = False  # high-demand/high-risk: faculty guide must approve the project first
 
     def search_text(self) -> str:
         """Lower-cased text used by the keyword fallback search."""
@@ -161,7 +164,14 @@ def _encode(value: Any) -> Any:
 
 
 def user_from_dict(d: dict[str, Any]) -> User:
-    return User(id=d["id"], name=d["name"], role=Role(d["role"]), department=d["department"])
+    return User(
+        id=d["id"],
+        name=d["name"],
+        role=Role(d["role"]),
+        department=d["department"],
+        email=d.get("email", ""),
+        trainings=tuple(d.get("trainings", ())),
+    )
 
 
 def equipment_from_dict(d: dict[str, Any]) -> Equipment:
@@ -176,6 +186,7 @@ def equipment_from_dict(d: dict[str, Any]) -> Equipment:
         tags=tuple(d.get("tags", ())),
         requires_training=bool(d.get("requires_training", False)),
         risk_level=RiskLevel(d.get("risk_level", "low")),
+        requires_approval=bool(d.get("requires_approval", False)),
     )
 
 

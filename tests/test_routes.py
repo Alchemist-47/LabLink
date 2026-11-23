@@ -53,7 +53,7 @@ def test_full_flow_request_approve_book(client, service):
     r = post(client, "/requests", {
         "project_title": "Lake study", "description": "Measure nitrate absorbance in lake water samples",
         "deadline": "2026-12-20", "guide_id": "f_khan", "project_type": "research",
-        "equipment_id": "eq_uvvis", "hours_eq_uvvis": "3",
+        "equipment_id": ["eq_uvvis", "eq_esp32"], "hours_eq_uvvis": "3", "hours_eq_esp32": "4",
     })
     assert r.status_code == 302
     request = next(r for r in service.repo.requests_for_student("s_arjun") if r.project_title == "Lake study")
@@ -64,9 +64,13 @@ def test_full_flow_request_approve_book(client, service):
     assert post(client, f"/requests/{request.id}/decide", {"decision": "approve"}).status_code == 302
 
     login(client, "s_arjun")
+    # Arjun has no UV-Vis safety training on record, so the gated instrument is refused with the reason.
     r = post(client, "/equipment/eq_uvvis/book", {"request_id": request.id, "date": "2026-11-30", "start_hour": "10", "hours": "2"})
+    assert r.status_code == 409 and "safety training" in r.get_data(as_text=True)
+    # The ESP32 kit needs neither approval nor training, so it books straight away.
+    r = post(client, "/equipment/eq_esp32/book", {"request_id": request.id, "date": "2026-11-30", "start_hour": "10", "hours": "2"})
     assert r.status_code == 302
-    assert "UV-Vis" in client.get("/bookings").get_data(as_text=True)
+    assert "ESP32" in client.get("/bookings").get_data(as_text=True)
 
 
 def test_invalid_booking_shows_errors(client):
@@ -142,7 +146,7 @@ def test_suggest_shows_no_equipment_message_for_software(client):
 
 def test_concurrent_booking_clash_returns_409(client, service):
     login(client, "s_meera")
-    monday = "2026-11-30"
+    monday = "2026-11-27"  # before Meera's project deadline (Sat 28 Nov); printer is free
     r1 = post(
         client,
         "/equipment/eq_dso/book",
@@ -211,3 +215,57 @@ def test_ai_failure_is_shown_honestly(repo):
     assert "AI suggestions are unavailable right now" in page or "keyword matches" in page
     search = c.get("/?q=train+an+image+classifier").get_data(as_text=True)
     assert "Gemini didn&#39;t respond in time" in search or "Gemini didn't respond in time" in search
+
+
+def test_reset_demo_route_is_coordinator_only(client):
+    assert post(client, "/demo/reset").status_code == 403  # default user is a student
+    assert client.post("/demo/reset").status_code == 400  # no CSRF token
+    login(client, "a_lab")
+    assert "Reset demo" in client.get("/").get_data(as_text=True)
+    r = post(client, "/demo/reset")
+    assert r.status_code == 302 and r.headers["Location"].endswith("/allocate")
+
+
+def test_demo_bar_explains_persistence(client):
+    page = client.get("/").get_data(as_text=True)
+    assert "Changes last until the server restarts" in page and "Reset demo" not in page
+
+
+def test_plan_page_and_book_all(client, service):
+    login(client, "s_ananya")
+    projects = client.get("/requests").get_data(as_text=True)
+    assert "Plan and book sessions" in projects and "Your safety training on record" in projects
+    page = client.get("/requests/rq_drone/plan").get_data(as_text=True)
+    assert "Plan and book" in page and "Book all" in page and "Ultimaker" in page
+    r = post(client, "/requests/rq_drone/plan/book")
+    assert r.status_code == 302 and r.headers["Location"].endswith("/bookings")
+    assert "Booked from project plan" in client.get("/bookings").get_data(as_text=True)
+
+
+def test_plan_page_explains_blocked_items(client):
+    login(client, "s_arjun")
+    page = client.get("/requests/rq_biosensor/plan").get_data(as_text=True)
+    assert "Can’t book yet" in page and "safety training" in page
+
+
+def test_plan_routes_are_owner_only(client):
+    login(client, "s_meera")
+    assert client.get("/requests/rq_drone/plan").status_code == 403
+    assert post(client, "/requests/rq_drone/plan/book").status_code == 403
+    login(client, "f_rao")
+    assert client.get("/requests/rq_drone/plan").status_code == 403
+    assert client.get("/requests/rq_nope/plan").status_code in (403, 404)
+
+
+def test_students_see_weekly_hours_meter(client):
+    login(client, "s_ananya")
+    assert "Lab hours this week" in client.get("/").get_data(as_text=True)
+    login(client, "f_rao")
+    assert "Lab hours this week" not in client.get("/").get_data(as_text=True)
+
+
+def test_equipment_page_shows_approval_and_training(client):
+    login(client, "s_arjun")
+    page = client.get("/equipment/eq_uvvis").get_data(as_text=True)
+    assert "Guide approval required" in page and "not on your record" in page
+    assert "No approval needed" in client.get("/equipment/eq_esp32").get_data(as_text=True)

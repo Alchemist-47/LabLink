@@ -19,3 +19,5 @@ services:
         value: gemini-3.5-flash-lite   # fast, low-latency model; gemini-3.8-flash also works
       - key: CAMPUS_TZ
         value: Asia/Kolkata
+      - key: DEMO_MODE
+        value: "1"             # role switcher for judging; set "0" behind Google IAP for real sign-in

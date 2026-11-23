@@ -105,6 +105,16 @@ class FirestoreRepository(Repository):
     def is_empty(self) -> bool:
         return not list(self._db.collection(EQUIPMENT).limit(1).stream())
 
+    def clear(self) -> None:
+        """Delete all documents, in batches of up to 400 (Firestore allows 500 writes per batch)."""
+        for collection in (USERS, EQUIPMENT, REQUESTS, BOOKINGS):
+            refs = [snap.reference for snap in self._db.collection(collection).stream()]
+            for start in range(0, len(refs), 400):
+                batch = self._db.batch()
+                for ref in refs[start : start + 400]:
+                    batch.delete(ref)
+                batch.commit()
+
     def load(self, users, equipment, requests, bookings) -> None:
         batch = self._db.batch()
         for collection, items in (

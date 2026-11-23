@@ -66,6 +66,12 @@ def create_app(
         MAX_CONTENT_LENGTH=32 * 1024,  # forms only; reject large bodies early
         AI_RATE_LIMIT=int(os.environ.get("AI_RATE_LIMIT", "20")),
         AI_GLOBAL_RATE_LIMIT=int(os.environ.get("AI_GLOBAL_RATE_LIMIT", "120")),
+        WRITE_RATE_LIMIT=int(os.environ.get("WRITE_RATE_LIMIT", "30")),
+        WRITE_GLOBAL_RATE_LIMIT=int(os.environ.get("WRITE_GLOBAL_RATE_LIMIT", "300")),
+        # DEMO_MODE=1 (default): role switcher, no sign-in. DEMO_MODE=0: users are identified
+        # by a trusted identity-proxy header (Google IAP) and the switcher is disabled.
+        DEMO_MODE=os.environ.get("DEMO_MODE", "1") != "0",
+        IDENTITY_HEADER=os.environ.get("IDENTITY_HEADER", "X-Goog-Authenticated-User-Email"),
     )
     if config:
         app.config.update(config)
@@ -86,6 +92,8 @@ def create_app(
     app.extensions["lablink"] = LabService(repo, assistant, clock)
     app.extensions["ai_limiter"] = RateLimiter(app.config["AI_RATE_LIMIT"], 60)
     app.extensions["ai_global_limiter"] = RateLimiter(app.config["AI_GLOBAL_RATE_LIMIT"], 60)
+    app.extensions["write_limiter"] = RateLimiter(app.config["WRITE_RATE_LIMIT"], 60)
+    app.extensions["write_global_limiter"] = RateLimiter(app.config["WRITE_GLOBAL_RATE_LIMIT"], 60)
 
     init_security(app)
 
@@ -101,6 +109,11 @@ def create_app(
     @app.errorhandler(429)
     def _http_error(err):
         return render_template("error.html", error=err), err.code
+
+    @app.errorhandler(401)
+    def _unauthorised(err):
+        # Standalone page: there is no signed-in user to render the normal layout for.
+        return render_template("signin.html"), 401
 
     @app.errorhandler(500)
     def _server_error(err):

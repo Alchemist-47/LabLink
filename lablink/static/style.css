@@ -278,3 +278,11 @@ thead th { font-family: var(--display); font-weight: 700; border-bottom: var(--l
 
 /* Two-tier AI results */
 .tier-heading { margin: 2.2rem 0 .3rem; }
+.reset-demo { margin-left: .2rem; }
+.demo-row .switcher { margin-left: auto; }
+.reset-demo .btn { box-shadow: none; }
+
+/* Weekly fair-use meter and plan page */
+.hours-meter { display: flex; align-items: center; gap: .5rem; margin: 0; font-size: .92rem; }
+.hours-meter .util-bar { margin: 0; }
+.plan-book { margin-top: 2rem; }

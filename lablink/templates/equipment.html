@@ -11,7 +11,8 @@
     <li>{{ eq.category }}</li>
     <li>{{ eq.units }} unit{{ '' if eq.units == 1 else 's' }}</li>
     <li>{{ risk(eq.risk_level) }}</li>
-    {% if eq.requires_training %}<li>Safety training required</li>{% endif %}
+    {% if eq.requires_training %}<li>Safety training required{% if me.role == Role.STUDENT %}: {{ 'you have it' if eq.category in me.trainings else 'not on your record' }}{% endif %}</li>{% endif %}
+    <li>{{ 'Guide approval required' if eq.requires_approval else 'No approval needed' }}</li>
   </ul>
 </header>
 
@@ -21,7 +22,7 @@
   {% if me.role != Role.STUDENT %}
     <p>Bookings are made by students. You manage access from <a href="{{ url_for('main.requests_page') }}">Approvals</a>.</p>
   {% elif not bookable %}
-    <p>To book this, you need an approved project request that includes it.</p>
+    <p>To book this, add it to one of your project requests.{% if eq.requires_approval %} Your guide must approve the project first.{% endif %}</p>
     <p><a class="btn" href="{{ url_for('main.requests_page') }}">Start a project request</a></p>
   {% else %}
   {% if result %}
@@ -68,7 +69,7 @@
     <div class="field">
       <label for="request_id">Project</label>
       <select id="request_id" name="request_id" required>
-        {% for r in bookable %}<option value="{{ r.id }}" {% if form.request_id == r.id %}selected{% endif %}>{{ r.project_title }} (due {{ r.deadline.strftime('%d %b') }})</option>{% endfor %}
+        {% for r in bookable %}<option value="{{ r.id }}" {% if form.request_id == r.id %}selected{% endif %}>{{ r.project_title }} (due {{ r.deadline.strftime('%d %b') }}{% if r.status.value == 'pending' %}, approval pending{% endif %})</option>{% endfor %}
       </select>
     </div>
     <div class="field-row">

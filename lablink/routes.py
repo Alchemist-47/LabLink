@@ -18,8 +18,9 @@ from flask import (
 )
 
 from .models import ProjectType, RequestStatus, Role, User
+from .policy import WEEKLY_CAP_HOURS
 from .scheduling import CLOSE_HOUR, MAX_BOOKING_HOURS, OPEN_HOUR
-from .security import CSRF_SESSION_KEY
+from .security import client_key, trusted_email
 from .services import LabService, NotFound, PermissionDenied
 from .validation import (
     MAX_QUERY,
@@ -39,17 +40,43 @@ def svc() -> LabService:
     return current_app.extensions["lablink"]
 
 
+def demo_mode() -> bool:
+    return bool(current_app.config.get("DEMO_MODE", True))
+
+
+def signed_in_user() -> User | None:
+    """The user named by the identity proxy (DEMO_MODE off), matched by email."""
+    email = trusted_email()
+    if not email:
+        return None
+    return next((u for u in svc().repo.list_users() if u.email.lower() == email), None)
+
+
 def current_user() -> User:
+    if not demo_mode():
+        user = signed_in_user()
+        if user is None:  # require_sign_in normally stops this earlier
+            abort(401)
+        return user
     user = svc().repo.get_user(session.get("user_id", DEFAULT_USER))
     return user or svc().repo.get_user(DEFAULT_USER)
+
+
+@bp.before_app_request
+def require_sign_in():
+    """Outside demo mode every page needs a recognised signed-in user."""
+    if demo_mode() or request.endpoint in ("main.healthz", "static"):
+        return None
+    if signed_in_user() is None:
+        abort(401)
+    return None
 
 
 def ai_allowed() -> bool:
     """Per-browser limit (keyed on the signed session, falling back to IP, since many
     users can share one proxy address) plus a global cap that protects the API quota."""
-    client = session.get(CSRF_SESSION_KEY) or request.remote_addr or "anon"
     return (
-        current_app.extensions["ai_limiter"].allow(client)
+        current_app.extensions["ai_limiter"].allow(client_key())
         and current_app.extensions["ai_global_limiter"].allow("global")
     )
 
@@ -82,10 +109,15 @@ def roles(*allowed: Role):
 
 @bp.app_context_processor
 def inject_globals():
+    # Never abort here: this also runs for the sign-in page, where nobody is signed in.
+    me = current_user() if demo_mode() else signed_in_user()
     return {
-        "me": current_user(),
-        "all_users": sorted(svc().repo.list_users(), key=lambda u: (u.role, u.name)),
+        "me": me,
+        "all_users": sorted(svc().repo.list_users(), key=lambda u: (u.role, u.name)) if demo_mode() else [],
         "ai_enabled": svc().ai.enabled,
+        "demo_mode": demo_mode(),
+        "weekly_cap": WEEKLY_CAP_HOURS,
+        "hours_this_week": svc().hours_this_week(me) if me and me.role == Role.STUDENT else None,
         "Role": Role,
     }
 
@@ -97,12 +129,26 @@ def healthz():
 
 @bp.post("/switch-user")
 def switch_user():
+    if not demo_mode():
+        abort(404)
     user_id = valid_id(request.form.get("user_id"))
     if user_id and svc().repo.get_user(user_id):
         session["user_id"] = user_id
         flash(f"Now viewing as {svc().repo.get_user(user_id).name}.")
     target = request.form.get("next", "")
     return redirect(target if target.startswith("/") and not target.startswith("//") else url_for("main.discover"))
+
+
+@bp.post("/demo/reset")
+@handles_errors
+@roles(Role.ADMIN)
+def reset_demo():
+    if not demo_mode():
+        abort(404)
+    svc().reset_demo(current_user())
+    session["user_id"] = "a_lab"
+    flash("Demo data reset to its starting state.", "success")
+    return redirect(url_for("main.allocate"))
 
 
 # Discovery -----------------------------------------------------------------
@@ -254,6 +300,36 @@ def decide(request_id: str):
     svc().decide_request(current_user(), request_id, decision == "approve", note)
     flash(f"Request {'approved' if decision == 'approve' else 'rejected'}.", "success")
     return redirect(url_for("main.requests_page"))
+
+
+@bp.get("/requests/<request_id>/plan")
+@handles_errors
+@roles(Role.STUDENT)
+def plan_project_page(request_id: str):
+    request_, items = svc().plan_for(current_user(), request_id)
+    return render_template(
+        "plan.html",
+        project=request_,
+        items=items,
+        equipment=svc().equipment_map(),
+        sessions=sum(len(i.sessions) for i in items),
+        weekly_cap=WEEKLY_CAP_HOURS,
+    )
+
+
+@bp.post("/requests/<request_id>/plan/book")
+@handles_errors
+@roles(Role.STUDENT)
+def book_plan(request_id: str):
+    booked, failed = svc().book_plan(current_user(), request_id)
+    if booked and not failed:
+        flash(f"Booked all {booked} session{'s' if booked != 1 else ''}.", "success")
+    elif booked:
+        flash(f"Booked {booked} session(s). {failed} could not be booked because the slot was taken; plan again for new times.", "success")
+    else:
+        flash("Nothing was booked: those slots are no longer free. Here is a fresh plan.", "error")
+        return redirect(url_for("main.plan_project_page", request_id=request_id))
+    return redirect(url_for("main.my_bookings"))
 
 
 # Bookings -----------------------------------------------------------------

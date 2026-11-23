@@ -1,18 +1,41 @@
 # LabLink: Making College Laboratories More Accessible
 
-LabLink is a GenAI-powered platform for sharing lab resources across a campus. Students can find specialised equipment, development kits and workstations in **any** department, request access for a project, and book slots. Faculty approve requests with the help of an AI brief. When too many teams want the same machine, LabLink resolves the clash with a **transparent, deadline-aware fairness algorithm** and uses Gemini to explain each outcome in plain language.
+**Live app:** https://lablink-oiz3.onrender.com · **Code:** https://github.com/Alchemist-47/LabLink
+
+LabLink is a GenAI-powered platform for sharing lab resources across a campus. Students describe what they need to do and find specialised equipment, development kits and workstations in **any** department. They request access for a project, and LabLink plans and books their sessions. Faculty approve requests with an AI brief. When too many teams want the same machine, a **transparent, deadline-aware fairness engine** resolves the clash, sometimes by proposing a swap, and Gemini explains every outcome in plain language.
+
+## Chosen vertical
+
+**Campus laboratory resource sharing**, for the challenge *LabLink: Making College Laboratories More Accessible*. There are three personas:
+- **Students:** discover, plan and book equipment for their projects.
+- **Faculty guides:** approve project access for their students.
+- **The lab coordinator:** resolves conflicts and watches utilisation.
+
+## How LabLink meets the challenge expectations
+
+| Expectation | Evidence in LabLink |
+|---|---|
+| **A smart, dynamic assistant** | Students describe a task in plain words and Gemini finds equipment across all departments (`ai.search`). They describe a project once and Gemini proposes the equipment and hours (`ai.suggest_needs`). **Plan & book** (`planner.py`) then turns the project into concrete sessions and books them all in one click. Faculty get an AI **Who / Why / Risk** brief per request. Coordinators get AI explanations of every allocation and AI usage tips. Everything reacts to live data: availability, the waitlist, approvals, training records and weekly hours. |
+| **Logical decision making based on user context** | Every booking passes the same rules (`policy.py`), using the student's **training records**, **project approval** (only for high-demand equipment), **project deadline**, **other bookings** and **hours already used this week** (12-hour fair-use cap). Conflicts are ranked by **deadline urgency, project type (capstone > club > coursework), recent usage and waiting time** (`fairness.py`). The same request from two students can get different, explained outcomes. Faculty can only decide requests they guide; only the coordinator allocates. |
+| **Practical, real-world usability** | Requests never dead-end. A full slot comes with free slots before the deadline, the same kind of machine in another department, or the waitlist; a blocked booking says exactly why (for example "needs Laser Cutter safety training"). Ordinary equipment can be booked as soon as a project exists, and only high-demand machines wait for approval. Students always see their **lab hours this week**. Each machine has a **safety prep checklist**. The app works by keyboard and screen reader, on mobile, and without JavaScript. |
+| **Clean, maintainable code** | Layered design: thin routes → services (permissions) → pure domain modules (`policy`, `planner`, `fairness`, `scheduling`) with no I/O. Storage sits behind one interface (memory or Firestore). **166 tests, 96% coverage**, including the same contract tests on both storage back ends. Ruff lint, `pip-audit` and the tests run in CI on every push. Four runtime dependencies. |
+
+### What sets it apart
+- **Swaps, not just queues.** If every slot before an urgent deadline is taken, FairShare can ask a lower-priority team with a later deadline to move, and only to a slot that still meets *their* deadline.
+- **Grounded AI.** Gemini must quote the student's own words for anything it marks as *Needed*, and the code checks the quote. Inferred items are shown separately as *Worth considering*, and pure-software projects are told no lab equipment is needed. The AI never invents equipment and never makes allocation decisions.
+- **Honest when AI fails.** Every AI result is labelled as Gemini or keyword matching, or with a notice that Gemini didn't respond. The app keeps working without Gemini.
+- **Accessible by design.** Zero automated axe-core violations (WCAG 2.1 AA plus best practice, *including colour contrast*) on every page and role, on desktop and mobile.
 
 ## How it covers the challenge
 
 | Challenge requirement | What LabLink does |
 |---|---|
-| Equipment discovery across departments | Search in plain words, e.g. *"measure a 50 MHz signal from my FPGA"* → Gemini matches it against the whole campus catalogue and explains each match. Filters by department and type. Live "free this hour" status. |
-| Intelligent slot booking | Week view of availability per machine. Capacity is checked atomically (a Firestore transaction), so the last unit can never be double-booked. If a slot is full, LabLink offers the next free slots **before your deadline**, equivalent machines in other departments, or a place on the waitlist. |
-| Project-based access requests | Describe the project once and Gemini proposes the equipment and hours it needs. One request goes to the faculty guide and covers every machine. |
+| Equipment discovery across departments | Plain-language search, e.g. *"measure a 50 MHz signal from my FPGA"*. Gemini matches it against the whole campus catalogue and explains each match, grouping direct matches separately from *also likely useful* ones. Filters by department and type, with live "free now" status. |
+| Intelligent slot booking | **Plan & book** proposes the earliest valid sessions for every machine a project needs and books them in one click. Direct booking checks capacity atomically (a Firestore transaction or lock), so the last unit can never be double-booked. Every booking checks training, approval, deadline, clashes with the student's other bookings, and the weekly fair-use cap. |
+| Project-based access requests | Describe the project once; Gemini proposes the equipment and hours. One request covers every machine. Ordinary equipment is usable straight away, while high-demand machines wait for the guide's approval. |
 | Faculty approvals | Each pending request has an AI **Who / Why / Risk** brief. Only the project's guide (or the lab coordinator) can approve or reject it. |
-| Optimising resource utilisation | Utilisation dashboard (last 14 days, upcoming hours, waitlists) with AI recommendations, e.g. promote idle machines or add capacity where waitlists form. |
-| Fair and feasible conflict resolution | **FairShare** engine (below). It recommends a slot on the requested machine, an equivalent machine elsewhere, or a swap with a lower-priority team. Nothing changes until faculty apply the plan. |
-| Safety | Every machine has a risk level and training flag. A **safety prep checklist** is generated for the student's planned use. |
+| Optimising resource utilisation | Usage dashboard (last 14 days, upcoming hours, waitlists) with AI recommendations. The weekly cap stops any one student monopolising equipment, and the planner spreads load onto equivalent machines in other departments. |
+| Fair and feasible conflict resolution | **FairShare** (below) gives each team a slot on the requested machine, an equivalent machine elsewhere, or a swap with a lower-priority team. Nothing changes until faculty apply the plan. |
 
 ## FairShare: how conflicts are resolved
 
@@ -32,36 +55,72 @@ Teams are placed highest score first, in the first slot before their deadline. L
 3. a **swap**: a team holding a slot before the deadline is asked to move to another slot that still meets *their* deadline. This only happens if that team scores at least 10 points lower and has a later deadline;
 4. otherwise, the earliest slot after the deadline, flagged for the guide.
 
-The algorithm is plain, deterministic Python (`lablink/fairness.py`), so the same inputs always give the same outcome and the whole thing is unit-tested. **Gemini does not make allocation decisions.** It only explains them.
+The algorithm is plain, deterministic Python (`lablink/fairness.py`), so the same inputs always give the same outcome, and it is unit-tested. **Gemini does not make allocation decisions.** It only explains them.
 
-The seeded demo has a live conflict: four teams want the Mechanical department's 3D printer, which a coursework team booked early for several days. Switch to *Lab Coordinator* → **Fair allocation** to see the plan, which covers all four outcome types, then apply it.
+The seeded demo has a live conflict: four teams want the Mechanical department's 3D printer, which a coursework team booked early for several days. Switch to *Lab Coordinator* → **Fair allocation** to see all four outcome types, apply the plan, then use **Reset demo** to start again.
+
+## Plan & book: from project to booked sessions
+
+For each machine a project needs, `planner.py` books the remaining hours as sessions of up to 4 hours, each at the earliest time that:
+- has a free unit,
+- doesn't overlap the student's other bookings,
+- keeps the student within **12 hours per week** (later weeks are used if needed),
+- ends before the project deadline.
+
+The requested machine is used first. An equivalent machine is used only when the requested one has no room before the deadline, and only one the student is trained for. Items the student can't book yet (approval pending, training missing) are listed with the reason instead of being skipped. **Book all** recomputes the plan on the server and re-checks every session, so a slot taken in the meantime fails cleanly rather than double-booking.
 
 ## Architecture
 
+```mermaid
+flowchart LR
+  U[Students · Faculty · Lab coordinator] -->|HTTPS, server-rendered HTML| R[routes.py<br/>CSRF · rate limits · roles]
+  R --> S[services.py<br/>permissions · orchestration]
+  S --> P[policy.py<br/>training · approval · deadline · weekly cap]
+  S --> PL[planner.py<br/>plan & book]
+  S --> F[fairness.py<br/>FairShare ranking · swaps]
+  S --> SC[scheduling.py<br/>hours · capacity · slots]
+  S --> AI[ai.py<br/>Gemini + fallbacks]
+  AI -->|structured JSON, grounded| G[(Gemini API)]
+  S --> RP[repository.py]
+  RP --> M[(In-memory)]
+  RP --> FS[(Firestore)]
 ```
-Browser (server-rendered HTML, no JavaScript)
-   │
-Flask app (Docker + gunicorn; deployed on Render, Cloud Run-ready)
-   ├── routes.py        thin HTTP layer, role checks, rate limiting
-   ├── services.py      business rules and permissions
-   ├── fairness.py      FairShare scoring + allocation (deterministic)
-   ├── scheduling.py    opening hours, capacity, slot search
-   ├── ai.py            Gemini (google-genai) with keyword/template fallbacks
-   ├── validation.py    server-side validation of every input
-   ├── security.py      CSRF, CSP and security headers, rate limiter
-   └── repository.py    MemoryRepository (demo/tests)  |  firestore_repo.py (persistent, optional)
+
+```
+lablink/
+  routes.py      thin HTTP layer: parse, call service, render
+  services.py    business rules and permission checks
+  policy.py      booking rules from user context (pure)
+  planner.py     plan & book (pure, deterministic)
+  fairness.py    FairShare scoring, allocation, swaps (pure, deterministic)
+  scheduling.py  opening hours, capacity, slot search (pure)
+  ai.py          Gemini calls, grounding checks, keyword/template fallbacks
+  validation.py  server-side validation of every input
+  security.py    CSRF, security headers, rate limiters, identity header
+  repository.py  storage interface + in-memory store;  firestore_repo.py: Firestore
+tests/           166 tests: domain, services, routes, AI, storage contracts, security
 ```
 
 **Design choices**
-- **Gemini is optional at runtime.** If there's no key, a timeout or a quota error, every feature falls back to keyword matching or templates, so the app never breaks. Responses are cached (LRU), and AI endpoints are rate-limited per browser plus a global cap, which protects the API quota.
-- **Prompt-injection safe.** Student text is passed inside delimiters, labelled as untrusted data, and stripped of tag characters. Every equipment ID Gemini returns is checked against the real catalogue before use. Hours are clamped.
-- **Lean.** Four runtime dependencies, no front-end build, a single container.
+- **Decisions are code; Gemini understands and explains.** Rules, planning and allocation are deterministic and tested. Gemini handles language (search, suggestions, briefs, explanations) and is never trusted blindly.
+- **Gemini is optional at runtime.** If there's no key, a timeout or a quota error, features fall back to keyword matching or templates and say so. Responses are cached and rate-limited.
+- **Lean and accessible.** Server-rendered HTML with no JavaScript, four runtime dependencies, one container.
 
 ## Security
-- No secrets in the repository. `SECRET_KEY` and `GEMINI_API_KEY` are environment variables set in the host's dashboard (Render generates `SECRET_KEY`; on Cloud Run they come from Secret Manager). Firestore, when enabled, uses the service account (Application Default Credentials).
-- CSRF tokens on every form, strict Content-Security-Policy (`default-src 'self'`, no inline scripts or styles), `X-Frame-Options: DENY`, `nosniff`, HSTS, secure/HttpOnly/SameSite cookies.
-- All permissions are enforced server-side: students book only with their own approved requests; only the guide or coordinator decides requests; only faculty or the coordinator allocate. The allocation plan is recomputed on the server when applied, never taken from the client.
-- 32 KB request-size limit, length caps and ID allow-listing on all inputs, open-redirect protection, non-root container user.
+
+### Security model
+- **Demo mode (default, `DEMO_MODE=1`).** There is no sign-in, so judges can try every role from the "Viewing as" switcher. This is deliberate for the demo, and the page header says so.
+- **Signed-in mode (`DEMO_MODE=0`).** Deploy behind an identity-aware proxy such as **Google Cloud IAP** (campus Google accounts). The proxy authenticates the user and sets `X-Goog-Authenticated-User-Email`. LabLink matches that email to a user and uses that user's role. Unknown or missing identities get *401 Sign in required*. Role switching and demo reset are disabled, and the user list is never sent to the browser. Only enable this behind a proxy that strips the header from client requests, as IAP does.
+
+### Protections
+- **Permissions** are enforced on the server in `services.py`: students book only with their own approved projects; only the project's guide (or the coordinator) decides requests; only faculty and the coordinator allocate; only the coordinator resets the demo. Allocation plans are recomputed on the server when applied, never trusted from the browser.
+- **CSRF** tokens on every form. A **strict Content-Security-Policy** (`default-src 'self'`, no inline scripts or styles), HSTS, `X-Frame-Options: DENY`, `nosniff`, and Secure/HttpOnly/SameSite session cookies.
+- **Rate limits:** AI features (20 per browser per minute, 120 overall) and every form submission (30 per browser per minute, 300 overall). They are keyed on the signed session, because many users can share one proxy address.
+- **Input validation:** length caps, allow-listed IDs, date and hour ranges, a 32 KB request-size limit, and open-redirect protection.
+- **AI safety:** student text is passed to Gemini as delimited untrusted data. Every equipment ID Gemini returns is checked against the catalogue, numbers are clamped, and "Needed" suggestions must quote the student's own words.
+- **Concurrency:** booking capacity is checked atomically (lock in memory, transaction in Firestore), so the last unit can't be double-booked.
+- **No secrets in the repo.** `SECRET_KEY` and `GEMINI_API_KEY` are host environment variables (Secret Manager on Cloud Run), and Firestore uses the service account. The container runs as a non-root user, and error pages don't reveal internals.
+- **Dependencies** are pinned and scanned with `pip-audit` in CI.
 
 ## Accessibility
 - Semantic landmarks, a skip link, one `h1` per page, `aria-current` navigation.
@@ -90,7 +149,7 @@ Without any settings it runs with in-memory demo data and the keyword fallback. 
 ## Tests
 
 ```bash
-pytest --cov=lablink          # 90 tests, 95% coverage
+pytest --cov=lablink          # 166 tests, 96% coverage
 ruff check lablink tests
 ```
 
@@ -108,7 +167,7 @@ The repo includes a Render Blueprint (`render.yaml`): a free Docker web service 
 4. Deploy. The app is live at `https://lablink-xxxx.onrender.com`, and every push to `main` redeploys it.
 5. **Keep it awake.** Free services sleep after 15 minutes without traffic and take about a minute to wake. Create a free job at cron-job.org that requests `https://<your-app>.onrender.com/healthz` every 10 minutes. One always-on service fits within Render's 750 free hours a month.
 
-On the free tier, storage is in-memory: the demo campus is re-seeded on every restart, which keeps the demo clean for each judge. For persistent data, set `LABLINK_STORAGE=firestore` on a host with Google Cloud credentials (below).
+On the free tier, storage is in-memory: the demo campus is re-seeded on every restart, which keeps the demo clean for each judge. The page header says so, and the Lab Coordinator has a **Reset demo** button that restores the starting data at any time (for example after applying a fair-allocation plan). The reset works the same with Firestore. For persistent data, set `LABLINK_STORAGE=firestore` on a host with Google Cloud credentials (below).
 
 ## Alternative: Google Cloud Run (+ Firestore)
 
@@ -153,5 +212,9 @@ On first start, an empty Firestore database is seeded with the demo campus. To u
 | `GEMINI_MODEL` | `gemini-flash-latest` | Model name |
 | `AI_RATE_LIMIT` | `20` | AI requests per browser per minute |
 | `AI_GLOBAL_RATE_LIMIT` | `120` | AI requests per minute across all users |
+| `DEMO_MODE` | `1` | `1`: role switcher, no sign-in. `0`: sign-in via identity proxy (see Security model) |
+| `IDENTITY_HEADER` | `X-Goog-Authenticated-User-Email` | Header carrying the signed-in email when `DEMO_MODE=0` |
+| `WRITE_RATE_LIMIT` | `30` | Form submissions per browser per minute |
+| `WRITE_GLOBAL_RATE_LIMIT` | `300` | Form submissions per minute across all users |
 | `TRUST_PROXY` | auto | `1` behind an HTTPS proxy (auto on Render/Cloud Run): secure cookies + HSTS |
 | `CAMPUS_TZ` | `Asia/Kolkata` | Campus time zone |

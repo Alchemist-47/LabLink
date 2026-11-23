@@ -11,9 +11,16 @@
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to main content</a>
+  {% if demo_mode %}
   <aside class="demo-bar" aria-label="Demo controls">
     <div class="wrap demo-row">
-      <p>Demo mode, no sign-in needed.</p>
+      <p>Demo mode, no sign-in. Changes last until the server restarts.</p>
+      {% if me.role == Role.ADMIN %}
+      <form method="post" action="{{ url_for('main.reset_demo') }}" class="reset-demo">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-small btn-quiet">Reset demo</button>
+      </form>
+      {% endif %}
       <form class="switcher" method="post" action="{{ url_for('main.switch_user') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="next" value="{{ request.path }}">
@@ -27,6 +34,7 @@
       </form>
     </div>
   </aside>
+  {% endif %}
   <header class="site-header">
     <div class="wrap header-row">
       <a class="wordmark" href="{{ url_for('main.discover') }}">
@@ -44,6 +52,13 @@
           {% endif %}
         </ul>
       </nav>
+      {% if hours_this_week is not none %}
+      <p class="hours-meter">
+        <span>Lab hours this week</span>
+        <svg class="util-bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="util-track" width="100" height="10"/><rect class="util-fill" width="{{ [hours_this_week * 100 // weekly_cap, 100]|min }}" height="10"/><rect class="bar-frame" width="100" height="10" vector-effect="non-scaling-stroke"/></svg>
+        <strong>{{ hours_this_week }} of {{ weekly_cap }} h</strong>
+      </p>
+      {% endif %}
     </div>
   </header>
   <main id="main" class="wrap" tabindex="-1">
@@ -61,6 +76,6 @@
     {% endif %}
     {% block content %}{% endblock %}
   </main>
-  <footer class="site-footer"><div class="wrap">Labs are open Monday to Saturday, 9:00 to 18:00. Use “Viewing as” at the top to switch between students, faculty and the lab coordinator.</div></footer>
+  <footer class="site-footer"><div class="wrap">Labs are open Monday to Saturday, 9:00 to 18:00. {% if demo_mode %}Use “Viewing as” at the top to switch between students, faculty and the lab coordinator.{% else %}Signed in as {{ me.name }}.{% endif %}</div></footer>
 </body>
 </html>

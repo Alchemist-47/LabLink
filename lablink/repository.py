@@ -68,6 +68,10 @@ class Repository(ABC):
     def is_empty(self) -> bool: ...
 
     @abstractmethod
+    def clear(self) -> None:
+        """Delete every user, equipment item, request and booking."""
+
+    @abstractmethod
     def load(
         self,
         users: Iterable[User],
@@ -163,6 +167,11 @@ class MemoryRepository(Repository):
 
     def is_empty(self) -> bool:
         return not self._equipment
+
+    def clear(self) -> None:
+        with self._lock:
+            for store in (self._users, self._equipment, self._requests, self._bookings):
+                store.clear()
 
     def load(self, users, equipment, requests, bookings) -> None:
         for u in users:

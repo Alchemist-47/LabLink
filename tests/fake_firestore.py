@@ -14,8 +14,9 @@ _OPS = {"==": lambda a, b: a == b}
 
 
 class Snapshot:
-    def __init__(self, data):
+    def __init__(self, data, reference=None):
         self._data = data
+        self.reference = reference
 
     @property
     def exists(self):
@@ -35,6 +36,9 @@ class DocRef:
     def set(self, data):
         self._store[self._collection][self.id] = copy.deepcopy(data)
 
+    def delete(self):
+        self._store[self._collection].pop(self.id, None)
+
 
 class Query:
     def __init__(self, store, collection, filters=(), max_results=None):
@@ -49,8 +53,8 @@ class Query:
 
     def stream(self):
         docs = [
-            Snapshot(d)
-            for d in self._store[self._collection].values()
+            Snapshot(d, DocRef(self._store, self._collection, doc_id))
+            for doc_id, d in list(self._store[self._collection].items())
             if all(_OPS[f.op_string](d.get(f.field_path), f.value) for f in self._filters)
         ]
         return iter(docs[: self._limit] if self._limit is not None else docs)
@@ -71,9 +75,15 @@ class Batch:
     def set(self, ref, data):
         self._writes.append((ref, data))
 
+    def delete(self, ref):
+        self._writes.append((ref, None))
+
     def commit(self):
         for ref, data in self._writes:
-            ref.set(data)
+            if data is None:
+                ref.delete()
+            else:
+                ref.set(data)
 
 
 class Transaction(Batch):

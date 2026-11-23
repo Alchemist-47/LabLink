@@ -79,7 +79,7 @@ backend design and the test suite.
 
 ## 7. Task board
 ### In progress
-- #18 **Security hardening** · **Claude** · files: `lablink/__init__.py`, `lablink/models.py`, `lablink/seed.py`, `lablink/routes.py`, `lablink/security.py`, `lablink/templates/base.html`, `README.md`, `.env.example`, `render.yaml`, `tests/*`. Write rate limit on all form POSTs + `DEMO_MODE` setting + README "Security model". Antigravity: do not touch these files.
+- #20 **Calendar export (.ics)** · **Antigravity** · files ONLY: `lablink/calendar_export.py` (new), `lablink/__init__.py`, `lablink/templates/bookings.html`, `tests/test_calendar.py` (new). Spec: a new Flask Blueprint in `calendar_export.py` with `GET /bookings/<booking_id>.ics` that returns an RFC 5545 calendar file (`text/calendar`) for a CONFIRMED booking, with a 15-minute VALARM reminder, times in Asia/Kolkata (TZID or UTC), the equipment name and lab as SUMMARY/LOCATION, and proper escaping of commas/semicolons/newlines. Only the booking's owner or the admin may download it (use `current_user()` from `lablink.routes` and the service in `current_app.extensions["lablink"]`; return 404 for unknown, 403 for others). Register the blueprint in `create_app` in `__init__.py`. In `bookings.html` add an "Add to calendar" link (with an aria-label naming the equipment and time) for confirmed bookings. Tests: content and headers, permission 403, unknown 404, waitlisted bookings not exportable, text escaping. No new dependencies; build the ICS text by hand. Run `pytest` and `ruff check lablink tests` before committing.
 - #3 Deploy to **Render free tier** · **Ashish** (Render dashboard, needs his GitHub + Gemini key) · steps in README → "Deploy (live demo): Render free tier"
 
 ### To do
@@ -91,6 +91,8 @@ backend design and the test suite.
 | 8 | Draft LinkedIn post + platform project description | Antigravity | Explain the problem, FairShare, Gemini's role |
 
 ### Done
+- #19 `policy.py` (training, approval only for gated equipment, deadline, 12 h weekly cap) applied to every booking; `planner.py` Plan & book (earliest sessions per machine, equivalent fallback, cap across weeks) + one-click Book all; weekly hours meter; README rewritten around the rubric (expectations table, Mermaid diagram). 166 tests, 96% coverage, axe clean (Claude, 2026-11-23)
+- #18 Security hardening: rate limit on every form POST (30/browser/min, 300 global); `DEMO_MODE=0` = sign-in via Google IAP header matched to user email (401 page, switcher/reset disabled, user list hidden); README "Security model". 135 tests, axe clean in both modes (Claude, 2026-11-23)
 - #17 CI dependency scan: added pip-audit==2.10.1 to requirements-dev.txt and workflow step scanning requirements.txt on every push/PR. Local scan clean: 0 known vulnerabilities (Antigravity, 2026-11-23)
 - #16 Demo bar says changes last until restart; Lab Coordinator "Reset demo" button (POST /demo/reset, admin-only, CSRF) restores seed data; `Repository.clear()` for memory + Firestore. 127 tests, axe clean (Claude, 2026-11-23)
 - #15 axe audit clean: 0 violations (WCAG 2.1 AA + best practice) on 9 page/role combos plus suggestions, booking clash and 404 on desktop + mobile. Badge colours one shade lighter (same hues), demo bar is an `<aside>` landmark, unique region label on equipment page (Claude, 2026-11-23)
@@ -114,6 +116,8 @@ backend design and the test suite.
 - Post-session feedback → equipment health flag
 
 ## 8. Work log (newest first, one line per handoff)
+- 2026-11-23 · Claude · #19 done. Users have `trainings`, equipment has `requires_approval` (seed: printers, laser, GPU, UV-Vis, PCR). Booking a gated machine on a pending request is now a clear "blocked" result, not an error. Also touched `templates/base.html` (hours meter) and new `templates/plan.html`. Antigravity's #20 files untouched.
+- 2026-11-23 · Claude · #18 done. Users now have an `email` field (seed: `<name>@lablink.example.edu`). Demo behaviour unchanged by default (`DEMO_MODE=1`). Everything (Claude #16, #18 and Antigravity #17) is ready for one commit + push.
 - 2026-11-23 · Antigravity · #17 done (.github/workflows/tests.yml, requirements-dev.txt). Added pip-audit==2.10.1 dependency scan in CI after install step; verified 0 known vulnerabilities locally against requirements.txt.
 - 2026-11-23 · Claude · #16 done. Persistence decision: stay in-memory on Render for judging (clean demo each restart); switch to Firestore only if we reach Top 10, before the pitch. Needs commit + push.
 - 2026-11-23 · Claude · Final audit: repo rules pass, 7/7 CI green, live site verified with Gemini on all pages, a11y 0 violations (#15, replaces task 5). Open: Cloud Run URL question to organisers, LinkedIn post + description (task 8). Needs commit + push.

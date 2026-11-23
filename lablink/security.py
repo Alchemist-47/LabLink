@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import hmac
+import re
 import secrets
 import threading
 import time
 from collections import defaultdict, deque
 
-from flask import Flask, abort, request, session
+from flask import Flask, abort, current_app, request, session
 
 CSRF_SESSION_KEY = "_csrf"
+EMAIL_PATTERN = re.compile(r"^[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,190}\.[a-z]{2,24}$")
 CSP = (
     "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
     "form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
@@ -32,6 +34,31 @@ def _check_csrf() -> None:
     submitted = request.form.get("csrf_token", "")
     if not expected or not hmac.compare_digest(expected, submitted):
         abort(400, description="Your session expired. Reload the page and try again.")
+
+
+def client_key() -> str:
+    """Rate-limit identity: the signed session (many users can share one proxy IP),
+    falling back to the client address. A global cap backs this up."""
+    return session.get(CSRF_SESSION_KEY) or request.remote_addr or "anon"
+
+
+def _limit_writes():
+    """Every form submission counts against a per-browser and a global limit, so a
+    script cannot flood the (in-memory) store. Health checks and reads are free."""
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    ext = current_app.extensions
+    if not (ext["write_limiter"].allow(client_key()) and ext["write_global_limiter"].allow("global")):
+        abort(429, description="Too many changes in a short time. Wait a minute and try again.")
+
+
+def trusted_email() -> str | None:
+    """Signed-in email from the identity proxy header (Google IAP format
+    'accounts.google.com:user@example.edu'). Only trust this behind a proxy
+    that strips the header from client requests, such as Google IAP."""
+    raw = request.headers.get(current_app.config["IDENTITY_HEADER"], "")
+    email = raw.rsplit(":", 1)[-1].strip().lower()
+    return email if EMAIL_PATTERN.fullmatch(email) else None
 
 
 def _set_headers(response):
@@ -70,5 +97,6 @@ class RateLimiter:
 
 def init_security(app: Flask) -> None:
     app.before_request(_check_csrf)
+    app.before_request(_limit_writes)
     app.after_request(_set_headers)
     app.jinja_env.globals["csrf_token"] = csrf_token

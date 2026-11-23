@@ -165,3 +165,11 @@ def test_app_selects_firestore_from_env(monkeypatch, fake_client):
     count = len(fake_client.store["bookings"])
     create_app(assistant=LabAssistant(None), clock=lambda: NOW, config={"TESTING": True})
     assert len(fake_client.store["bookings"]) == count
+
+
+def test_clear_removes_everything(seeded):
+    seeded.clear()
+    assert seeded.is_empty()
+    assert seeded.list_users() == [] and seeded.list_requests() == [] and seeded.list_bookings() == []
+    seeded.load(*build_demo_data(NOW))  # reusable after clearing
+    assert len(seeded.waitlist("eq_fdm_printer")) == 4

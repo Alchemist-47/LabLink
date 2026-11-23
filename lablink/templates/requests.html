@@ -6,6 +6,7 @@
 <div class="center">
 <h1>My projects</h1>
 <p class="lead">Describe your project once. LabLink suggests equipment from every department, and your faculty guide approves it all in one go.</p>
+<p>Your safety training on record: {% if me.trainings %}<strong>{{ me.trainings|join(', ') }}</strong>{% else %}<strong>none yet</strong>{% endif %}. Equipment that needs approval can be booked once your guide approves; everything else can be booked straight away.</p>
 </div>
 
 <section class="panel" aria-labelledby="new-heading">
@@ -107,6 +108,9 @@
       </div>
       {% endif %}
       {% if r.decision_note %}<p><strong>Note from guide:</strong> {{ r.decision_note }}</p>{% endif %}
+      {% if me.role == Role.STUDENT and r.status.value != 'rejected' %}
+      <p><a class="btn btn-small" href="{{ url_for('main.plan_project_page', request_id=r.id) }}">Plan and book sessions</a></p>
+      {% endif %}
       {% if r.status.value == 'pending' and (me.role == Role.ADMIN or me.id == r.guide_id) %}
       <form method="post" action="{{ url_for('main.decide', request_id=r.id) }}" class="decide">
         {{ csrf() }}

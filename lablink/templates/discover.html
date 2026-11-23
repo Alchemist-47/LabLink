@@ -11,6 +11,7 @@
       <div class="tag-foot">
         {{ risk(eq.risk_level) }}
         {% if eq.requires_training %}<span class="training">Training required</span>{% endif %}
+        {% if eq.requires_approval %}<span class="training">Needs approval</span>{% endif %}
       </div>
     </li>
 {% endmacro %}
