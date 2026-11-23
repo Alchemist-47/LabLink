@@ -89,8 +89,8 @@ def parse_request_form(form, today: date, equipment_ids: set[str], faculty_ids: 
     if not needs:
         errors.append("Select at least one piece of equipment.")
 
-    if errors:
-        raise ValidationError(errors)
+    if errors or deadline is None:
+        raise ValidationError(errors or ["Enter a valid deadline date."])
     return RequestForm(title, description, deadline, guide_id, project_type, needs)
 
 
@@ -124,6 +124,6 @@ def parse_booking_form(form, now: datetime) -> BookingForm:
     except ValueError:
         errors.append(f"Duration must be 1–{MAX_BOOKING_HOURS} hours.")
         hours = 0
-    if errors:
-        raise ValidationError(errors)
+    if errors or request_id is None or start is None:
+        raise ValidationError(errors or ["Choose a valid project, date and start time."])
     return BookingForm(request_id, start, hours)

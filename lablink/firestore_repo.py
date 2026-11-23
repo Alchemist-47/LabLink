@@ -92,7 +92,7 @@ class FirestoreRepository(Repository):
 
         @firestore.transactional
         def _txn(transaction: firestore.Transaction) -> bool:
-            existing = [booking_from_dict(s.to_dict()) for s in transaction.get(query)]
+            existing = [booking_from_dict(s.to_dict() or {}) for s in transaction.get(query) if s.to_dict()]
             if count_overlapping(existing, booking.start, booking.end) >= capacity:
                 return False
             booking.status = BookingStatus.CONFIRMED

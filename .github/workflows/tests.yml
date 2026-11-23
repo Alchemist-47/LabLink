@@ -13,4 +13,5 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: pip-audit -r requirements.txt
       - run: ruff check lablink tests
+      - run: mypy
       - run: pytest --cov=lablink --cov-report=term-missing

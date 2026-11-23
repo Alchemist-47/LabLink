@@ -183,8 +183,8 @@ class LabService:
         if student.role != Role.STUDENT:
             raise PermissionDenied("Only students can book equipment")
         access = access_problems(student, equipment, request)
-        if access and access[0].code == "ownership":
-            raise PermissionDenied(access[0].message)
+        if request is None or (access and access[0].code == "ownership"):
+            raise PermissionDenied(access[0].message if access else "Choose one of your own project requests")
         start, end = form.start, form.start + timedelta(hours=form.hours)
         if not is_valid_window(start, end):
             return BookingResult(
@@ -376,7 +376,7 @@ class LabService:
         catalogue = self.equipment_map()
         applied = 0
         for d in decisions:
-            if d.start is None or d.equipment_id is None:
+            if d.start is None or d.end is None or d.equipment_id is None:
                 continue
             if d.outcome == "swap" and not self._move_holder(d, catalogue):
                 continue
@@ -391,7 +391,13 @@ class LabService:
 
     def _move_holder(self, d: AllocationDecision, catalogue: dict[str, Equipment]) -> bool:
         held = self.repo.get_booking(d.swap_booking_id or "")
-        if held is None or held.status != BookingStatus.CONFIRMED or d.swap_start is None:
+        if (
+            held is None
+            or held.status != BookingStatus.CONFIRMED
+            or d.swap_start is None
+            or d.swap_end is None
+            or d.swap_equipment_id is None
+        ):
             return False
         original = replace(held)
         held.status = BookingStatus.CANCELLED  # release the slot while re-placing

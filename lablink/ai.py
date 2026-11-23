@@ -410,15 +410,40 @@ class LabAssistant:
             "properties": {"insights": {"type": "array", "items": {"type": "string"}}},
             "required": ["insights"],
         }
+        cleaned_stats = [
+            {
+                "machine": s.get("name", ""),
+                "department": s.get("department", ""),
+                "units": s.get("units", 1),
+                "booked_percent_last_14_days": s.get("utilisation", 0),
+                "confirmed_hours_coming_up": s.get("upcoming_hours", 0),
+                "teams_on_waitlist": s.get("waitlisted", 0),
+            }
+            for s in stats
+        ]
         prompt = (
-            "Utilisation of campus lab equipment over the last two weeks (JSON). Give 3-4 short, "
-            "actionable recommendations for the lab coordinator to improve access and utilisation "
-            "(e.g. promote idle equipment to other departments, add capacity where waitlists form).\n"
-            + json.dumps(stats)
+            "You advise a campus lab coordinator. Give exactly 3 recommendations. "
+            "Each is ONE plain sentence of at most 25 words that starts with a verb, "
+            "names at most 2 machines using the machine names exactly as given, and "
+            "quotes a number only if it appears in the data, with its unit "
+            "(percent booked, hours coming up, teams waiting). Never invent numbers or use ids.\n"
+            + json.dumps(cleaned_stats)
         )
         data = self._generate_json(prompt, schema)
         if isinstance(data, dict) and data.get("insights"):
-            return [str(i)[:300] for i in data["insights"][:4]], True
+            id_to_name = {s["id"]: s["name"] for s in stats if "id" in s and "name" in s and s["id"]}
+            processed = []
+            for raw in data["insights"]:
+                tip = str(raw).strip()
+                for eq_id, eq_name in id_to_name.items():
+                    tip = tip.replace(eq_id, eq_name)
+                if "eq_" in tip or len(tip) > 220 or not tip:
+                    continue
+                processed.append(tip)
+                if len(processed) == 3:
+                    break
+            if processed:
+                return processed, True
         return _rule_insights(stats), False
 
 
@@ -496,17 +521,19 @@ def _template_explanation(d: AllocationDecision, rank: int, catalogue: dict[str,
         f"waiting {parts['waiting']})."
     )
     eq = catalogue.get(d.equipment_id or "")
-    if d.outcome == "allocated" and d.start:
-        return f"{why} You get {eq.name} on {d.start:%a %d %b, %H:%M}–{d.end:%H:%M}."
-    if d.outcome == "alternative" and d.start:
+    name = eq.name if eq else "the machine"
+    where = f" ({eq.department})" if eq else ""
+    if d.outcome == "allocated" and d.start and d.end:
+        return f"{why} You get {name} on {d.start:%a %d %b, %H:%M}–{d.end:%H:%M}."
+    if d.outcome == "alternative" and d.start and d.end:
         return (
             f"{why} The requested machine is full before your deadline, so you are offered "
-            f"{eq.name} ({eq.department}) on {d.start:%a %d %b, %H:%M}–{d.end:%H:%M}."
+            f"{name}{where} on {d.start:%a %d %b, %H:%M}–{d.end:%H:%M}."
         )
-    if d.outcome == "swap" and d.start:
+    if d.outcome == "swap" and d.start and d.end:
         return (
             f"{why} Every slot before your deadline was taken, so a lower-priority team with a later "
-            f"deadline is asked to move, giving you {eq.name} on {d.start:%a %d %b, %H:%M}–{d.end:%H:%M}."
+            f"deadline is asked to move, giving you {name} on {d.start:%a %d %b, %H:%M}–{d.end:%H:%M}."
         )
     if d.start:
         return f"{why} No capacity before your deadline; the earliest slot is {d.start:%a %d %b, %H:%M}. Please talk to your guide."
@@ -515,16 +542,16 @@ def _template_explanation(d: AllocationDecision, rank: int, catalogue: dict[str,
 
 def _rule_insights(stats: list[dict[str, Any]]) -> list[str]:
     insights = []
-    for s in sorted(stats, key=lambda s: -s["waitlisted"]):
-        if s["waitlisted"]:
+    for s in sorted(stats, key=lambda s: -s.get("waitlisted", 0)):
+        if s.get("waitlisted", 0):
             insights.append(
-                f"{s['name']} has {s['waitlisted']} team(s) waiting — run fair allocation and consider extra evening hours."
+                f"{s.get('name', 'Equipment')} has {s['waitlisted']} team(s) waiting — run fair allocation and consider extra evening hours."
             )
-    idle = [s for s in stats if s["utilisation"] < 5]
+    idle = [s for s in stats if s.get("utilisation", 0) < 5]
     if idle:
-        names = ", ".join(s["name"] for s in idle[:3])
+        names = ", ".join(s.get("name", "") for s in idle[:3])
         insights.append(f"Under-used: {names}. Promote them to other departments in the discovery search.")
-    busy = [s for s in stats if s["utilisation"] >= 60]
+    busy = [s for s in stats if s.get("utilisation", 0) >= 60]
     for s in busy[:1]:
-        insights.append(f"{s['name']} is {s['utilisation']}% utilised — a second unit would cut wait times.")
-    return insights[:4] or ["Utilisation is balanced; no action needed this week."]
+        insights.append(f"{s.get('name', 'Equipment')} is {s.get('utilisation', 0)}% booked — a second unit would cut wait times.")
+    return insights[:3] or ["Utilisation is balanced; no action needed this week."]

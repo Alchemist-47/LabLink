@@ -79,7 +79,6 @@ backend design and the test suite.
 
 ## 7. Task board
 ### In progress
-- #20 **Calendar export (.ics)** · **Antigravity** · files ONLY: `lablink/calendar_export.py` (new), `lablink/__init__.py`, `lablink/templates/bookings.html`, `tests/test_calendar.py` (new). Spec: a new Flask Blueprint in `calendar_export.py` with `GET /bookings/<booking_id>.ics` that returns an RFC 5545 calendar file (`text/calendar`) for a CONFIRMED booking, with a 15-minute VALARM reminder, times in Asia/Kolkata (TZID or UTC), the equipment name and lab as SUMMARY/LOCATION, and proper escaping of commas/semicolons/newlines. Only the booking's owner or the admin may download it (use `current_user()` from `lablink.routes` and the service in `current_app.extensions["lablink"]`; return 404 for unknown, 403 for others). Register the blueprint in `create_app` in `__init__.py`. In `bookings.html` add an "Add to calendar" link (with an aria-label naming the equipment and time) for confirmed bookings. Tests: content and headers, permission 403, unknown 404, waitlisted bookings not exportable, text escaping. No new dependencies; build the ICS text by hand. Run `pytest` and `ruff check lablink tests` before committing.
 - #3 Deploy to **Render free tier** · **Ashish** (Render dashboard, needs his GitHub + Gemini key) · steps in README → "Deploy (live demo): Render free tier"
 
 ### To do
@@ -91,6 +90,9 @@ backend design and the test suite.
 | 8 | Draft LinkedIn post + platform project description | Antigravity | Explain the problem, FairShare, Gemini's role |
 
 ### Done
+- #22 Usage page "What to do next" cleanup: stripped ids from prompt and post-processed Gemini output (id replacement, length/id filters, 3-tip cap); fixed _rule_insights to cap under-used machines at 3 and use percent wording; updated insights.html source attribution; 4 new tests. 220 tests, ruff and mypy clean (Antigravity, 2026-11-23)
+- #21 mypy type checking (`[tool.mypy]` in pyproject, mypy==2.3.1 pinned, type fixes in lablink/*.py; `mypy` clean on 15 files) + `tests/test_accessibility.py` (42 tests: lang, one h1, landmarks/skip link, unique ids, labelled controls, alt text, tabindex, scoped th, captions, design-token contrast ≥ 4.5). **CI needs `- run: mypy` after the ruff step in `.github/workflows/tests.yml`.** (Claude, 2026-11-23)
+- #20 Calendar export: `lablink/calendar_export.py` blueprint, `GET /bookings/<id>.ics` (confirmed only, owner/admin, 15-min reminder, UTC from IST, RFC 5545 escaping + folding); "Add to calendar" link in bookings.html; `tests/test_calendar.py` (8). 216 tests, 96% coverage (Claude, 2026-11-23)
 - #19 `policy.py` (training, approval only for gated equipment, deadline, 12 h weekly cap) applied to every booking; `planner.py` Plan & book (earliest sessions per machine, equivalent fallback, cap across weeks) + one-click Book all; weekly hours meter; README rewritten around the rubric (expectations table, Mermaid diagram). 166 tests, 96% coverage, axe clean (Claude, 2026-11-23)
 - #18 Security hardening: rate limit on every form POST (30/browser/min, 300 global); `DEMO_MODE=0` = sign-in via Google IAP header matched to user email (401 page, switcher/reset disabled, user list hidden); README "Security model". 135 tests, axe clean in both modes (Claude, 2026-11-23)
 - #17 CI dependency scan: added pip-audit==2.10.1 to requirements-dev.txt and workflow step scanning requirements.txt on every push/PR. Local scan clean: 0 known vulnerabilities (Antigravity, 2026-11-23)
@@ -116,6 +118,8 @@ backend design and the test suite.
 - Post-session feedback → equipment health flag
 
 ## 8. Work log (newest first, one line per handoff)
+- 2026-11-23 · Antigravity · #22 done (lablink/ai.py, lablink/templates/insights.html, tests/test_ai.py). Sanitized utilisation insights prompt & post-processing, fixed rule insights formatting, updated source hint in insights.html. 220 tests passing, ruff and mypy clean. No commit made per instructions.
+- 2026-11-23 · Claude · #20 calendar export + #21 mypy & a11y tests done. 216 tests, 96% coverage, ruff/mypy/pip-audit clean. README updated. **Ashish/Antigravity: add `- run: mypy` to tests.yml after ruff, then commit & push.**
 - 2026-11-23 · Claude · #19 done. Users have `trainings`, equipment has `requires_approval` (seed: printers, laser, GPU, UV-Vis, PCR). Booking a gated machine on a pending request is now a clear "blocked" result, not an error. Also touched `templates/base.html` (hours meter) and new `templates/plan.html`. Antigravity's #20 files untouched.
 - 2026-11-23 · Claude · #18 done. Users now have an `email` field (seed: `<name>@lablink.example.edu`). Demo behaviour unchanged by default (`DEMO_MODE=1`). Everything (Claude #16, #18 and Antigravity #17) is ready for one commit + push.
 - 2026-11-23 · Antigravity · #17 done (.github/workflows/tests.yml, requirements-dev.txt). Added pip-audit==2.10.1 dependency scan in CI after install step; verified 0 known vulnerabilities locally against requirements.txt.

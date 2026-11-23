@@ -244,7 +244,9 @@ def plan_allocation(
                 planner.place(item, equipment.id, *fit)
             decision = AllocationDecision(
                 item.id, item.user_id, "", score.total, score.breakdown(), "deferred",
-                equipment.id if fit else None, *(fit or (None, None)),
+                equipment_id=equipment.id if fit else None,
+                start=fit[0] if fit else None,
+                end=fit[1] if fit else None,
                 reason="No capacity before the deadline on this or equivalent equipment; "
                 + ("earliest slot after the deadline offered." if fit else "no slot in the next three weeks."),
             )

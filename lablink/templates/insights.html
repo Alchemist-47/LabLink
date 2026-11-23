@@ -10,7 +10,11 @@
 <section class="panel" aria-labelledby="tips-heading">
   <h2 id="tips-heading">What to do next</h2>
   <ul class="tips">{% for t in tips %}<li>{{ t }}</li>{% endfor %}</ul>
-  <p class="hint">{{ source(used_ai) }}</p>
+  {% if used_ai %}
+  <p class="hint"><span class="source">Written by Gemini from the table below</span></p>
+  {% else %}
+  <p class="hint"><span class="source">Based on simple rules from the table below</span></p>
+  {% endif %}
 </section>
 {% endif %}
 <div class="section-head"><h2 id="table-heading">Every machine</h2><span class="count-pill">{{ stats|length }}</span></div>

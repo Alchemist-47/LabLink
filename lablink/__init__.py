@@ -77,7 +77,7 @@ def create_app(
         app.config.update(config)
     if behind_proxy:
         # Trust one proxy hop for the https scheme (enables HSTS) and client address.
-        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)  # type: ignore[method-assign]
 
     repo = repo or _build_repository()
     assistant = assistant or LabAssistant.from_env(
@@ -97,9 +97,11 @@ def create_app(
 
     init_security(app)
 
+    from .calendar_export import bp as calendar_bp
     from .routes import bp
 
     app.register_blueprint(bp)
+    app.register_blueprint(calendar_bp)
 
     @app.errorhandler(400)
     @app.errorhandler(403)

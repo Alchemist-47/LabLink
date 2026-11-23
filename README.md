@@ -17,14 +17,14 @@ LabLink is a GenAI-powered platform for sharing lab resources across a campus. S
 |---|---|
 | **A smart, dynamic assistant** | Students describe a task in plain words and Gemini finds equipment across all departments (`ai.search`). They describe a project once and Gemini proposes the equipment and hours (`ai.suggest_needs`). **Plan & book** (`planner.py`) then turns the project into concrete sessions and books them all in one click. Faculty get an AI **Who / Why / Risk** brief per request. Coordinators get AI explanations of every allocation and AI usage tips. Everything reacts to live data: availability, the waitlist, approvals, training records and weekly hours. |
 | **Logical decision making based on user context** | Every booking passes the same rules (`policy.py`), using the student's **training records**, **project approval** (only for high-demand equipment), **project deadline**, **other bookings** and **hours already used this week** (12-hour fair-use cap). Conflicts are ranked by **deadline urgency, project type (capstone > club > coursework), recent usage and waiting time** (`fairness.py`). The same request from two students can get different, explained outcomes. Faculty can only decide requests they guide; only the coordinator allocates. |
-| **Practical, real-world usability** | Requests never dead-end. A full slot comes with free slots before the deadline, the same kind of machine in another department, or the waitlist; a blocked booking says exactly why (for example "needs Laser Cutter safety training"). Ordinary equipment can be booked as soon as a project exists, and only high-demand machines wait for approval. Students always see their **lab hours this week**. Each machine has a **safety prep checklist**. The app works by keyboard and screen reader, on mobile, and without JavaScript. |
-| **Clean, maintainable code** | Layered design: thin routes → services (permissions) → pure domain modules (`policy`, `planner`, `fairness`, `scheduling`) with no I/O. Storage sits behind one interface (memory or Firestore). **166 tests, 96% coverage**, including the same contract tests on both storage back ends. Ruff lint, `pip-audit` and the tests run in CI on every push. Four runtime dependencies. |
+| **Practical, real-world usability** | Requests never dead-end. A full slot comes with free slots before the deadline, the same kind of machine in another department, or the waitlist; a blocked booking says exactly why (for example "needs Laser Cutter safety training"). Ordinary equipment can be booked as soon as a project exists, and only high-demand machines wait for approval. Students always see their **lab hours this week**, and can **add any booking to their calendar** (`.ics` with a 15-minute reminder). Each machine has a **safety prep checklist**. The app works by keyboard and screen reader, on mobile, and without JavaScript. |
+| **Clean, maintainable code** | Layered design: thin routes → services (permissions) → pure domain modules (`policy`, `planner`, `fairness`, `scheduling`) with no I/O. Storage sits behind one interface (memory or Firestore). **216 tests, 96% coverage**, including the same contract tests on both storage back ends and automated accessibility tests. Ruff lint, **mypy type checking**, `pip-audit` and the tests run in CI on every push. Four runtime dependencies. |
 
 ### What sets it apart
 - **Swaps, not just queues.** If every slot before an urgent deadline is taken, FairShare can ask a lower-priority team with a later deadline to move, and only to a slot that still meets *their* deadline.
 - **Grounded AI.** Gemini must quote the student's own words for anything it marks as *Needed*, and the code checks the quote. Inferred items are shown separately as *Worth considering*, and pure-software projects are told no lab equipment is needed. The AI never invents equipment and never makes allocation decisions.
 - **Honest when AI fails.** Every AI result is labelled as Gemini or keyword matching, or with a notice that Gemini didn't respond. The app keeps working without Gemini.
-- **Accessible by design.** Zero automated axe-core violations (WCAG 2.1 AA plus best practice, *including colour contrast*) on every page and role, on desktop and mobile.
+- **Accessible by design.** Zero axe-core violations (WCAG 2.1 AA plus best practice, *including colour contrast*) on every page and role, on desktop and mobile. Accessibility is also **tested on every push**: 42 tests check labels, headings, landmarks, names, tables and the contrast of every design colour pair.
 
 ## How it covers the challenge
 
@@ -98,7 +98,8 @@ lablink/
   validation.py  server-side validation of every input
   security.py    CSRF, security headers, rate limiters, identity header
   repository.py  storage interface + in-memory store;  firestore_repo.py: Firestore
-tests/           166 tests: domain, services, routes, AI, storage contracts, security
+  calendar_export.py  booking → .ics calendar file
+tests/           216 tests: domain, services, routes, AI, storage contracts, security, accessibility
 ```
 
 **Design choices**
@@ -149,7 +150,8 @@ Without any settings it runs with in-memory demo data and the keyword fallback. 
 ## Tests
 
 ```bash
-pytest --cov=lablink          # 166 tests, 96% coverage
+pytest --cov=lablink          # 216 tests, 96% coverage
+mypy                          # type check
 ruff check lablink tests
 ```
 

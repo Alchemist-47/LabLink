@@ -115,6 +115,6 @@ def check_booking(
     bookings: Iterable[Booking],
 ) -> list[Problem]:
     problems = access_problems(student, equipment, request)
-    if problems and problems[0].code == "ownership":
+    if request is None or (problems and problems[0].code == "ownership"):
         return problems
     return problems + slot_problems(student, request, start, end, list(bookings))

@@ -58,8 +58,10 @@ def current_user() -> User:
         if user is None:  # require_sign_in normally stops this earlier
             abort(401)
         return user
-    user = svc().repo.get_user(session.get("user_id", DEFAULT_USER))
-    return user or svc().repo.get_user(DEFAULT_USER)
+    user = svc().repo.get_user(session.get("user_id", DEFAULT_USER)) or svc().repo.get_user(DEFAULT_USER)
+    if user is None:  # demo data missing entirely
+        abort(503, description="Demo data is not loaded yet. Try again in a moment.")
+    return user
 
 
 @bp.before_app_request
@@ -132,9 +134,10 @@ def switch_user():
     if not demo_mode():
         abort(404)
     user_id = valid_id(request.form.get("user_id"))
-    if user_id and svc().repo.get_user(user_id):
-        session["user_id"] = user_id
-        flash(f"Now viewing as {svc().repo.get_user(user_id).name}.")
+    chosen = svc().repo.get_user(user_id) if user_id else None
+    if chosen is not None:
+        session["user_id"] = chosen.id
+        flash(f"Now viewing as {chosen.name}.")
     target = request.form.get("next", "")
     return redirect(target if target.startswith("/") and not target.startswith("//") else url_for("main.discover"))
 

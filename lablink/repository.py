@@ -145,7 +145,7 @@ class MemoryRepository(Repository):
         self._requests[request.id] = request
 
     def list_bookings(self, equipment_id: str | None = None) -> list[Booking]:
-        items = self._bookings.values()
+        items = list(self._bookings.values())
         if equipment_id:
             items = [b for b in items if b.equipment_id == equipment_id]
         return sorted(items, key=lambda b: b.start)

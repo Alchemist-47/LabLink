@@ -12,6 +12,7 @@ from lablink.ai import (
     TIER_NEEDED,
     TIMEOUT_MS,
     LabAssistant,
+    _rule_insights,
     keyword_search,
 )
 from lablink.models import (
@@ -152,6 +153,83 @@ def test_utilisation_rules():
         [{"name": "A", "utilisation": 80, "waitlisted": 2}, {"name": "B", "utilisation": 0, "waitlisted": 0}]
     )
     assert not used_ai and any("A" in t for t in tips) and any("B" in t for t in tips)
+
+
+def test_utilisation_prompt_has_no_ids_and_contains_clear_keys():
+    client = FakeClient(payload={"insights": ["Promote 3D printers to other departments."]})
+    stats = [
+        {
+            "id": "eq_fdm_printer",
+            "name": "Bambu Lab 3D Printer",
+            "department": "Mechanical",
+            "units": 1,
+            "utilisation": 18,
+            "upcoming_hours": 12,
+            "waitlisted": 4,
+        }
+    ]
+    tips, used_ai = LabAssistant(client).utilisation_insights(stats)
+    assert used_ai is True
+    prompt = client.models.prompts[-1]
+    assert "eq_" not in prompt
+    assert "booked_percent_last_14_days" in prompt
+
+
+def test_utilisation_fake_gemini_reply_replaces_ids_with_names():
+    client = FakeClient(payload={"insights": ["Add capacity for eq_fdm_printer to reduce wait times."]})
+    stats = [
+        {
+            "id": "eq_fdm_printer",
+            "name": "Bambu Lab X1-Carbon 3D Printer",
+            "department": "Mechanical",
+            "units": 1,
+            "utilisation": 18,
+            "upcoming_hours": 12,
+            "waitlisted": 4,
+        }
+    ]
+    tips, used_ai = LabAssistant(client).utilisation_insights(stats)
+    assert used_ai is True
+    assert len(tips) == 1
+    assert "Bambu Lab X1-Carbon 3D Printer" in tips[0]
+    assert "eq_fdm_printer" not in tips[0]
+
+
+def test_utilisation_gemini_reply_dropped_when_too_long_or_contains_unmatched_id():
+    stats = [
+        {
+            "id": "eq_fdm_printer",
+            "name": "Bambu Lab X1-Carbon 3D Printer",
+            "department": "Mechanical",
+            "units": 1,
+            "utilisation": 18,
+            "upcoming_hours": 12,
+            "waitlisted": 4,
+        }
+    ]
+    long_tip = "Promote " + ("workstations and equipment " * 15)
+    unmatched_id_tip = "Reallocate eq_mystery to bio lab."
+    client = FakeClient(payload={"insights": [long_tip, unmatched_id_tip]})
+    tips, used_ai = LabAssistant(client).utilisation_insights(stats)
+    assert used_ai is False
+    assert any("Bambu Lab X1-Carbon 3D Printer" in t for t in tips)
+
+
+def test_rule_insights_caps_tips_and_underused_list():
+    stats = [
+        {"name": f"W{i}", "utilisation": 80, "waitlisted": 10 - i} for i in range(4)
+    ] + [
+        {"name": f"Idle{i}", "utilisation": 1, "waitlisted": 0} for i in range(5)
+    ]
+    tips = _rule_insights(stats)
+    assert len(tips) <= 3
+
+    idle_stats = [{"name": f"Idle{i}", "utilisation": 0, "waitlisted": 0} for i in range(6)]
+    idle_tips = _rule_insights(idle_stats)
+    underused = [t for t in idle_tips if "Under-used" in t]
+    assert len(underused) == 1
+    assert "Idle0" in underused[0] and "Idle1" in underused[0] and "Idle2" in underused[0]
+    assert "Idle3" not in underused[0]
 
 
 def test_from_env_builds_client_only_when_configured():
