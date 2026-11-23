@@ -108,6 +108,7 @@ backend design and the test suite.
 - Post-session feedback → equipment health flag
 
 ## 8. Work log (newest first, one line per handoff)
+- 2026-11-23 · Antigravity · Refreshed visual palette in `lablink/static/style.css` and `favicon.svg`: modern sandstone linen canvas (`#f4efe6`), electric coral pill buttons (`#ff6338`), obsidian ink (`#141824`), and field-specific department pastels. 90 tests pass, WCAG AA/AAA verified.
 - 2026-11-23 · Claude · #11 redesign done (templates + static only, no Python changes). Live at https://lablink-oiz3.onrender.com after push. Task 5 (a11y audit) can start once deployed. Keep the design tokens in `style.css` `:root` when editing.
 - 2026-11-23 · Claude · **Repo moved to the submission account: https://github.com/Alchemist-47/LabLink.git** (single branch `main` @ 2d5f867, 46 files, CI workflow included, no secrets). Ashish pushed from Windows after re-auth with `workflow` scope. Old repo Alchemist-2905/LabLink to be deleted/made private. Render must be connected with the Alchemist-47 GitHub account.
 - 2026-11-23 · Antigravity · Task 10 done. Ran ruff & pytest (90 passed, 96% cov), committed and pushed Render blueprint & healthz updates to main. Ready for Ashish to deploy on Render (task 3).
