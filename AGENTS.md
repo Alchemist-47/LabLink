@@ -16,7 +16,7 @@ conflicts fairly** based on deadlines, availability and requirements.
 - An AI auto-scores **Code quality, Security, Efficiency, Testing, Accessibility, Problem alignment**.
 - **2 scored submissions only, and the LATEST score counts** (not the best). Never submit a weaker version.
 - The GitHub repo must be **public, exactly one branch (`main`), under 10 MB**, linked with a `.git` URL.
-- The live **Cloud Run** URL must work without sign-in at judging time, or we're disqualified.
+- The live URL must work without sign-in at judging time. (Top-10 rule mentions Cloud Run; we're on Render because GCP billing needs a ₹1,000 prepayment. Ashish accepted that Top-10 eligibility risk.)
 - Submit a LinkedIn post explaining the project.
 
 ## 3. Architecture (where things live)
@@ -79,7 +79,7 @@ backend design and the test suite.
 
 ## 7. Task board
 ### In progress
-- #3 Deploy to Cloud Run (README → "Deploy to Google Cloud Run") · **Antigravity** · GCP project `promptwars-anoop`, region `asia-south1`, `LABLINK_STORAGE=firestore`
+- #3 Deploy to **Render free tier** · **Ashish** (Render dashboard, needs his GitHub + Gemini key) · steps in README → "Deploy (live demo): Render free tier"
 
 ### To do
 | # | Task | Lane | Notes |
@@ -91,6 +91,7 @@ backend design and the test suite.
 | 8 | Draft LinkedIn post + platform project description | Antigravity | Explain the problem, FairShare, Gemini's role |
 
 ### Done
+- #10 Commit + push Claude's Render changes (`render.yaml`, `lablink/__init__.py`, `lablink/routes.py`, `tests/test_routes.py`, `README.md`, `AGENTS.md`) (Antigravity, 2026-11-23)
 - #2 Create GitHub repo (public), push `main` only (`https://github.com/Alchemist-2905/LabLink.git`) (Antigravity, 2026-11-23)
 - #1 Create `.github/workflows/tests.yml` for CI (Antigravity, 2026-11-23)
 - #9 Storage contract tests: same 21 checks run on memory + Firestore (fake client), incl. 12-thread atomic capacity; Firestore code 0% → 97% covered. Suite now 87 tests, 95% coverage (Claude, 2026-11-23)
@@ -106,6 +107,9 @@ backend design and the test suite.
 - Post-session feedback → equipment health flag
 
 ## 8. Work log (newest first, one line per handoff)
+- 2026-11-23 · Antigravity · Task 10 done. Ran ruff & pytest (90 passed, 96% cov), committed and pushed Render blueprint & healthz updates to main. Ready for Ashish to deploy on Render (task 3).
+- 2026-11-23 · Claude · Render support ready: `render.yaml` blueprint (free, Singapore, /healthz), secure cookies + HSTS auto-enabled on Render (`RENDER` env), AI rate limit now per-browser + global cap. 90 tests, 96% coverage, ruff clean. **Antigravity: task 10 (commit + push), then Ashish deploys on Render.** Cloud Run steps kept in README as an alternative.
+- 2026-11-23 · Claude · Hosting changed: no Google Cloud billing, so we deploy to **Render free tier** (Docker, from GitHub). Storage = in-memory demo data (Firestore needs GCP billing setup we're skipping). Claude is preparing the code; Antigravity please pause task 3.
 - 2026-11-23 · Antigravity · Task 2 done. Created public repo https://github.com/Alchemist-2905/LabLink.git, pushed single branch main (45 files, 0.63 MB, zero secrets). Starting Task 3 (Cloud Run deploy).
 - 2026-11-23 · Antigravity · Task 1 done. Created `.github/workflows/tests.yml` with Ubuntu 3.12 CI test run. Starting Task 2 (GitHub repo).
 - 2026-11-23 · Claude · #9 done. `FirestoreRepository` now takes an optional `client=` (tests inject a fake; prod unchanged). New: `tests/fake_firestore.py`, `tests/test_repositories.py`; README test section updated. Antigravity: no action needed, just include these in your next commit.

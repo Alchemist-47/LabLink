@@ -27,6 +27,12 @@ def campus_now() -> datetime:
     return datetime.now(CAMPUS_TZ).replace(tzinfo=None, second=0, microsecond=0)
 
 
+def _behind_https_proxy() -> bool:
+    """True on managed hosts that terminate HTTPS in front of the app
+    (Cloud Run sets K_SERVICE, Render sets RENDER); TRUST_PROXY=1 forces it."""
+    return any(os.environ.get(k) for k in ("K_SERVICE", "RENDER")) or os.environ.get("TRUST_PROXY") == "1"
+
+
 def _build_repository() -> Repository:
     if os.environ.get("LABLINK_STORAGE", "memory").lower() == "firestore":
         from .firestore_repo import FirestoreRepository
@@ -51,19 +57,20 @@ def create_app(
     if not secret:
         log.warning("SECRET_KEY not set; using a random key (sessions reset on restart)")
         secret = secrets.token_hex(32)
-    on_cloud_run = bool(os.environ.get("K_SERVICE"))
+    behind_proxy = _behind_https_proxy()
     app.config.update(
         SECRET_KEY=secret,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        SESSION_COOKIE_SECURE=on_cloud_run,
+        SESSION_COOKIE_SECURE=behind_proxy,
         MAX_CONTENT_LENGTH=32 * 1024,  # forms only; reject large bodies early
         AI_RATE_LIMIT=int(os.environ.get("AI_RATE_LIMIT", "20")),
+        AI_GLOBAL_RATE_LIMIT=int(os.environ.get("AI_GLOBAL_RATE_LIMIT", "120")),
     )
     if config:
         app.config.update(config)
-    if on_cloud_run:
-        # Trust exactly one proxy hop (Google's front end) for client IP and https scheme.
+    if behind_proxy:
+        # Trust one proxy hop for the https scheme (enables HSTS) and client address.
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
     repo = repo or _build_repository()
@@ -78,6 +85,7 @@ def create_app(
 
     app.extensions["lablink"] = LabService(repo, assistant, clock)
     app.extensions["ai_limiter"] = RateLimiter(app.config["AI_RATE_LIMIT"], 60)
+    app.extensions["ai_global_limiter"] = RateLimiter(app.config["AI_GLOBAL_RATE_LIMIT"], 60)
 
     init_security(app)
 

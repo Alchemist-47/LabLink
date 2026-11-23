@@ -98,3 +98,35 @@ def test_rate_limit(app, client):
     app.extensions["ai_limiter"].limit = 1
     assert client.get("/?q=gpu").status_code == 200
     assert client.get("/?q=gpu").status_code == 429
+
+
+def test_global_rate_limit_caps_all_clients(app):
+    app.extensions["ai_global_limiter"].limit = 2
+    for i in range(3):
+        c = app.test_client()
+        with c.session_transaction() as s:
+            s["_csrf"] = f"tok{i}"
+        status = c.get("/?q=gpu").status_code
+    assert status == 429
+
+
+def test_rate_limit_is_per_browser(app):
+    app.extensions["ai_limiter"].limit = 1
+    first, second = app.test_client(), app.test_client()
+    for c, tok in ((first, "a"), (second, "b")):
+        with c.session_transaction() as s:
+            s["_csrf"] = tok
+    assert first.get("/?q=gpu").status_code == 200
+    assert second.get("/?q=gpu").status_code == 200  # same IP, different browser
+    assert first.get("/?q=gpu").status_code == 429
+
+
+def test_managed_host_enables_secure_cookies_and_hsts(monkeypatch, repo):
+    from lablink import create_app
+    from lablink.ai import LabAssistant
+
+    monkeypatch.setenv("RENDER", "true")
+    app = create_app(repo=repo, assistant=LabAssistant(None), config={"TESTING": True, "SECRET_KEY": "t"})
+    assert app.config["SESSION_COOKIE_SECURE"] is True
+    r = app.test_client().get("/healthz", headers={"X-Forwarded-Proto": "https"})
+    assert "Strict-Transport-Security" in r.headers

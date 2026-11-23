@@ -41,7 +41,7 @@ The seeded demo has a live conflict: four teams want the Mechanical department's
 ```
 Browser (server-rendered HTML, no JavaScript)
    │
-Flask app (Cloud Run, gunicorn)
+Flask app (Docker + gunicorn; deployed on Render, Cloud Run-ready)
    ├── routes.py        thin HTTP layer, role checks, rate limiting
    ├── services.py      business rules and permissions
    ├── fairness.py      FairShare scoring + allocation (deterministic)
@@ -49,16 +49,16 @@ Flask app (Cloud Run, gunicorn)
    ├── ai.py            Gemini (google-genai) with keyword/template fallbacks
    ├── validation.py    server-side validation of every input
    ├── security.py      CSRF, CSP and security headers, rate limiter
-   └── repository.py    MemoryRepository (tests/local)  |  firestore_repo.py (production)
+   └── repository.py    MemoryRepository (demo/tests)  |  firestore_repo.py (persistent, optional)
 ```
 
 **Design choices**
-- **Gemini is optional at runtime.** If there's no key, a timeout or a quota error, every feature falls back to keyword matching or templates, so the app never breaks. Responses are cached (LRU) and AI endpoints are rate-limited.
+- **Gemini is optional at runtime.** If there's no key, a timeout or a quota error, every feature falls back to keyword matching or templates, so the app never breaks. Responses are cached (LRU), and AI endpoints are rate-limited per browser plus a global cap, which protects the API quota.
 - **Prompt-injection safe.** Student text is passed inside delimiters, labelled as untrusted data, and stripped of tag characters. Every equipment ID Gemini returns is checked against the real catalogue before use. Hours are clamped.
 - **Lean.** Four runtime dependencies, no front-end build, a single container.
 
 ## Security
-- No secrets in the repository. `SECRET_KEY` and `GEMINI_API_KEY` come from Secret Manager on Cloud Run, and Firestore uses the service account (Application Default Credentials).
+- No secrets in the repository. `SECRET_KEY` and `GEMINI_API_KEY` are environment variables set in the host's dashboard (Render generates `SECRET_KEY`; on Cloud Run they come from Secret Manager). Firestore, when enabled, uses the service account (Application Default Credentials).
 - CSRF tokens on every form, strict Content-Security-Policy (`default-src 'self'`, no inline scripts or styles), `X-Frame-Options: DENY`, `nosniff`, HSTS, secure/HttpOnly/SameSite cookies.
 - All permissions are enforced server-side: students book only with their own approved requests; only the guide or coordinator decides requests; only faculty or the coordinator allocate. The allocation plan is recomputed on the server when applied, never taken from the client.
 - 32 KB request-size limit, length caps and ID allow-listing on all inputs, open-redirect protection, non-root container user.
@@ -90,7 +90,7 @@ Without any settings it runs with in-memory demo data and the keyword fallback. 
 ## Tests
 
 ```bash
-pytest --cov=lablink          # 87 tests, 95% coverage
+pytest --cov=lablink          # 90 tests, 95% coverage
 ruff check lablink tests
 ```
 
@@ -98,7 +98,21 @@ They cover scheduling, FairShare fairness and swaps, AI fallbacks and prompt-inj
 
 The tests also run on every push via GitHub Actions (`.github/workflows/tests.yml`).
 
-## Deploy to Google Cloud Run
+## Deploy (live demo): Render free tier
+
+The repo includes a Render Blueprint (`render.yaml`): a free Docker web service in Singapore with a `/healthz` health check.
+
+1. Sign in at render.com with GitHub. No card is needed for the free tier.
+2. **New → Blueprint**, then select this repository. Render reads `render.yaml`.
+3. When prompted, paste your **`GEMINI_API_KEY`** (from Google AI Studio). `SECRET_KEY` is generated automatically.
+4. Deploy. The app is live at `https://lablink-xxxx.onrender.com`, and every push to `main` redeploys it.
+5. **Keep it awake.** Free services sleep after 15 minutes without traffic and take about a minute to wake. Create a free job at cron-job.org that requests `https://<your-app>.onrender.com/healthz` every 10 minutes. One always-on service fits within Render's 750 free hours a month.
+
+On the free tier, storage is in-memory: the demo campus is re-seeded on every restart, which keeps the demo clean for each judge. For persistent data, set `LABLINK_STORAGE=firestore` on a host with Google Cloud credentials (below).
+
+## Alternative: Google Cloud Run (+ Firestore)
+
+Requires a Google Cloud project with billing enabled.
 
 ```bash
 PROJECT=your-project-id
@@ -137,5 +151,7 @@ On first start, an empty Firestore database is seeded with the demo campus. To u
 | `GEMINI_API_KEY` | – | Gemini API key (AI Studio) |
 | `GEMINI_USE_VERTEX` | – | `1` to use Vertex AI with the service account |
 | `GEMINI_MODEL` | `gemini-flash-latest` | Model name |
-| `AI_RATE_LIMIT` | `20` | AI requests per client per minute |
+| `AI_RATE_LIMIT` | `20` | AI requests per browser per minute |
+| `AI_GLOBAL_RATE_LIMIT` | `120` | AI requests per minute across all users |
+| `TRUST_PROXY` | auto | `1` behind an HTTPS proxy (auto on Render/Cloud Run): secure cookies + HSTS |
 | `CAMPUS_TZ` | `Asia/Kolkata` | Campus time zone |

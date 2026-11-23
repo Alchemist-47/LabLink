@@ -19,6 +19,7 @@ from flask import (
 
 from .models import ProjectType, RequestStatus, Role, User
 from .scheduling import CLOSE_HOUR, MAX_BOOKING_HOURS, OPEN_HOUR
+from .security import CSRF_SESSION_KEY
 from .services import LabService, NotFound, PermissionDenied
 from .validation import (
     MAX_QUERY,
@@ -44,8 +45,13 @@ def current_user() -> User:
 
 
 def ai_allowed() -> bool:
-    # On Cloud Run, ProxyFix sets remote_addr from the proxy-appended (unspoofable) X-Forwarded-For entry.
-    return current_app.extensions["ai_limiter"].allow(request.remote_addr or "anon")
+    """Per-browser limit (keyed on the signed session, falling back to IP, since many
+    users can share one proxy address) plus a global cap that protects the API quota."""
+    client = session.get(CSRF_SESSION_KEY) or request.remote_addr or "anon"
+    return (
+        current_app.extensions["ai_limiter"].allow(client)
+        and current_app.extensions["ai_global_limiter"].allow("global")
+    )
 
 
 def handles_errors(view):
