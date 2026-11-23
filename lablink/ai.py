@@ -47,7 +47,10 @@ RELEVANCE_RULES = (
 )
 MAX_INPUT_CHARS = 1500
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
-TIMEOUT_MS = 8_000  # fail fast; the page falls back instead of hanging
+# Gemini's server rejects deadlines under 10 s (400 INVALID_ARGUMENT), so stay above that.
+# With minimal thinking a Flash-Lite answer normally takes a few seconds.
+MIN_SERVER_DEADLINE_MS = 10_000
+TIMEOUT_MS = 15_000
 # Result sources shown in the UI
 GEMINI = "gemini"      # Gemini answered
 KEYWORD = "keyword"    # Gemini not configured: keyword matching by design

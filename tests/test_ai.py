@@ -3,7 +3,17 @@ from datetime import date, datetime
 
 import pytest
 
-from lablink.ai import FALLBACK, GEMINI, KEYWORD, TIER_CONSIDER, TIER_NEEDED, LabAssistant, keyword_search
+from lablink.ai import (
+    FALLBACK,
+    GEMINI,
+    KEYWORD,
+    MIN_SERVER_DEADLINE_MS,
+    TIER_CONSIDER,
+    TIER_NEEDED,
+    TIMEOUT_MS,
+    LabAssistant,
+    keyword_search,
+)
 from lablink.models import (
     AccessRequest,
     AllocationDecision,
@@ -252,3 +262,10 @@ def test_bad_hours_value_falls_back_to_default():
         item("eq_gpu", evidence="neural network", task="train neural network", hours="lots")))
     needs, _ = LabAssistant(client).suggest_needs("train a neural network", EQUIPMENT)
     assert needs[0].hours == 4
+
+
+def test_timeout_respects_gemini_minimum_deadline():
+    """Gemini returns 400 'Minimum allowed deadline is 10s' for shorter timeouts."""
+    assert TIMEOUT_MS >= MIN_SERVER_DEADLINE_MS
+    assistant = LabAssistant.from_env("dummy-key", None, "global", "m")
+    assert assistant._client._api_client._http_options.timeout >= MIN_SERVER_DEADLINE_MS

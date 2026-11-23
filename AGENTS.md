@@ -111,6 +111,7 @@ backend design and the test suite.
 - Post-session feedback → equipment health flag
 
 ## 8. Work log (newest first, one line per handoff)
+- 2026-11-23 · Claude · Hotfix: Gemini timeout 8 s → 15 s. Gemini rejects server deadlines under 10 s (400 INVALID_ARGUMENT), which made every call fall back. Guard test added. 120 tests.
 - 2026-11-23 · Claude · #14 done. Root causes found: live site never reached Gemini (model `gemini-flash-latest` 404, then 504 timeouts from default thinking), and #13's rules were over-strict. Appended 2 lines to `style.css` (`.tier-heading`). Needs commit + push; then Ashish runs `python scripts/eval_ai.py` with his key.
 - 2026-11-23 · Antigravity · #14 done (services.py, equipment.html, test_services.py, test_routes.py). Enforced practical guardrail blocking concurrent overlapping bookings on different equipment; suggestions filter student clashes; 111 tests pass (96% cov), ruff clean.
 - 2026-11-23 · Claude · #13 done (ai.py, services.py, routes.py, seed.py tags, requests.html message, tests). Rule for everyone: **any new Gemini feature that recommends equipment must use `_grounded_schema` + `_accept`** so suggestions stay tied to the student's own words. Needs commit + push.
